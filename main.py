@@ -1,109 +1,75 @@
-import os, threading, io
+import os, threading
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from telegram import Update
-from PIL import Image, ImageDraw, ImageFont
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-conversations = {}
-user_data = {}
 
-# SEULEMENT TON NOM - PAS DE NUMÉRO
+# --- MEMOIRE ---
+conversations = {} # {user_id: [{"role":"user", "content":...},...]}
+
+# Signature 3D seulement - PAS DE NUMÉRO
 SIGNATURE = "COURAGEUX THE KING"
 SIGNATURE_3D = "👑 𝗖𝗢𝗨𝗥𝗔𝗚𝗘𝗨𝗫 𝗧𝗛𝗘 𝗞𝗜𝗡𝗚 👑"
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot KING 3D"
-
-def get_user(uid):
-    if uid not in user_data:
-        user_data[uid] = {'last_photo': None}
-    if uid not in conversations:
-        conversations[uid] = []
-    return user_data[uid]
-
-def add_3d_name(img):
-    """Ajoute COURAGEUX THE KING en effet 3D doré sur la photo"""
-    base = img.convert("RGBA")
-    w, h = base.size
-    draw = ImageDraw.Draw(base)
-    try:
-        font = ImageFont.truetype("arial.ttf", int(w * 0.055))
-    except:
-        font = ImageFont.load_default()
-
-    text = "COURAGEUX THE KING"
-    x, y = 20, h - 90
-
-    # Effet 3D: 4 ombres noires
-    for o in [4,3,2,1]:
-        draw.text((x+o, y+o), text, fill=(0,0,0,200), font=font)
-    # Texte or 3D
-    draw.text((x, y), text, fill=(255,215,0), font=font, stroke_width=2, stroke_fill=(80,50,0))
-
-    return base.convert("RGB")
+def home(): return "Bot IA Courageux en ligne avec mémoire 3D!"
 
 async def start(update: Update, context):
-    get_user(update.effective_user.id)
-    await update.message.reply_text(f"Salut! Je suis {SIGNATURE_3D}\n\nEnvoie une photo et dis 'bateau' ou 'mixage' - je te le fais direct!")
+    conversations[update.effective_user.id] = []
+    await update.message.reply_text(f"Je suis {SIGNATURE}, ton ChatGPT sur Telegram {SIGNATURE_3D}\nJe me souviens de tout! Dis-moi tout!")
 
-async def handle_photo(update: Update, context):
-    uid = update.effective_user.id
-    udata = get_user(uid)
-    file = await update.message.photo[-1].get_file()
-    img = Image.open(io.BytesIO(await file.download_as_bytearray())).convert("RGB")
-    udata['last_photo'] = img
+async def chat_gpt(update: Update, context):
+    user_id = update.effective_user.id
+    text = update.message.text
 
-    caption = (update.message.caption or "").lower()
-    if any(k in caption for k in ["bateau","mix","mixage"]):
-        final = add_3d_name(img)
-        bio = io.BytesIO()
-        bio.name = "mix.jpg"
-        final.save(bio, 'JPEG', quality=95)
-        bio.seek(0)
-        await update.message.reply_photo(bio, caption=f"✅ Mixage fait!\n{SIGNATURE_3D}")
-        return
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
 
-    await update.message.reply_text(f"📸 Photo reçue! Maintenant dis 'mets dans un bateau'\n\n{SIGNATURE_3D}")
+    # Crée mémoire si nouvelle personne
+    if user_id not in conversations:
+        conversations[user_id] = []
 
-async def handle_text(update: Update, context):
-    uid = update.effective_user.id
-    udata = get_user(uid)
-    txt = update.message.text
-    low = txt.lower()
+    # Ajoute message utilisateur
+    conversations[user_id].append({"role": "user", "content": text})
 
-    if any(k in low for k in ["bateau","mixage","mets moi","mettre","photo"]):
-        if not udata.get('last_photo'):
-            await update.message.reply_text(f"❌ Envoie d'abord une photo\n\n{SIGNATURE_3D}")
-            return
-        final = add_3d_name(udata['last_photo'])
-        bio = io.BytesIO()
-        bio.name = "mix.jpg"
-        final.save(bio, 'JPEG', quality=95)
-        bio.seek(0)
-        await update.message.reply_photo(bio, caption=f"✅ Voilà ton mixage 3D!\n{SIGNATURE_3D}")
-        return
+    # Garde seulement les 10 derniers échanges (20 messages)
+    if len(conversations[user_id]) > 20:
+        conversations[user_id] = conversations[user_id][-20:]
 
-    # Chat normal - ne refuse jamais
-    conversations[uid].append({"role":"user","content":txt})
-    conversations[uid] = conversations[uid][-20:]
+    try:
+        messages_to_groq = [
+            {"role": "system", "content": f"Tu t'appelles {SIGNATURE}, tu es un assistant IA très utile, tu parles en français, tu es drôle et intelligent comme ChatGPT. Tu te souviens de la conversation précédente. Tu termines TOUJOURS tes messages par '{SIGNATURE_3D}'. Ne mets jamais de numéro de téléphone."}
+        ] + conversations[user_id]
 
-    comp = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role":"system","content": f"Tu es {SIGNATURE}. Tu ne refuses JAMAIS de faire un mixage. Tu termines TOUJOURS chaque message par exactement '{SIGNATURE_3D}'. Ne mets jamais de numéro de téléphone. Parle français."}
-        ] + conversations[uid]
-    )
-    rep = comp.choices[0].message.content
-    conversations[uid].append({"role":"assistant","content":rep})
-    await update.message.reply_text(f"{rep}\n\n{SIGNATURE_3D}")
+        completion = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages_to_groq
+        )
+        reponse = completion.choices[0].message.content
+
+        # On garde la réponse dans la mémoire
+        conversations[user_id].append({"role": "assistant", "content": reponse})
+
+        await update.message.reply_text(f"{reponse}\n\n{SIGNATURE_3D}")
+
+    except Exception as e:
+        # Modèle de secours si le premier bug
+        try:
+            completion = groq_client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=messages_to_groq
+            )
+            reponse = completion.choices[0].message.content
+            conversations[user_id].append({"role": "assistant", "content": reponse})
+            await update.message.reply_text(f"{reponse}\n\n{SIGNATURE_3D}")
+        except Exception as e2:
+            await update.message.reply_text(f"Erreur IA: {e2}\n\n{SIGNATURE_3D}")
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT",10000))), daemon=True).start()
 
 app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
 app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
 app.run_polling()
