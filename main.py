@@ -17,7 +17,7 @@ async def chat_gpt(update: Update, context):
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "Tu t'appelles Courageux, tu es un assistant IA très utile, tu parles en français, tu es drôle et intelligent comme ChatGPT."},
                 {"role": "user", "content": update.message.text}
