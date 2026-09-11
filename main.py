@@ -12,13 +12,26 @@ flask_app = Flask(__name__)
 @flask_app.route('/')
 def home(): return "Bot KING"
 
+def parse_json_recursive(data, prefix=""):
+    """Parcourt et formate le dictionnaire JSON à la manière du bot de décryptage"""
+    output = []
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(v, (dict, list)):
+                output.append(f"{prefix}[~] [{k}] :")
+                output.extend(parse_json_recursive(v, prefix + "    "))
+            else:
+                output.append(f"{prefix}[-] [{k}] : {v}")
+    elif isinstance(data, list):
+        for item in data:
+            output.extend(parse_json_recursive(item, prefix))
+    return output
+
 def extract_hosts_from_binary(data_bytes):
-    # Cherche tous les domaines, IP, et paths même dans du binaire
     try:
         text = data_bytes.decode('utf-8', errors='ignore')
     except:
         text = str(data_bytes)
-    # Regex pour trouver HOST, SNI, etc.
     domains = re.findall(r'[a-z0-9\-]{2,}\.[a-z0-9\-\.]+\.[a-z]{2,}', text)
     ips = re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', text)
     paths = re.findall(r'\/[A-Za-z0-9\/_\-\@]{3,}', text)
@@ -27,7 +40,7 @@ def extract_hosts_from_binary(data_bytes):
 async def start(update: Update, context):
     uid = update.effective_user.id
     conversations[uid] = []
-    await update.message.reply_text(f"Je suis {SIGNATURE}\nEnvoie .dark .nm .tnl, je te sors le HOST!")
+    await update.message.reply_text(f"Je suis {SIGNATURE}\nEnvoie .dark .nm .tnl, je te sors la config complète!")
 
 async def handle_file(update: Update, context):
     doc = update.message.document
@@ -40,15 +53,31 @@ async def handle_file(update: Update, context):
     raw = await f.download_as_bytearray()
     raw_bytes = bytes(raw)
 
-    # 1. Essaie ZIP (certains .nm sont des zip)
-    if zipfile.is_zipfile(io.BytesIO(raw_bytes)):
-        try:
-            z = zipfile.ZipFile(io.BytesIO(raw_bytes))
-            content = z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
-            j = json.loads(content)
-            await update.message.reply_text(f"✅ C'est un ZIP .nm décodé!\n{json.dumps(j, indent=2)[:3000]}\n\n{SIGNATURE}")
+    # 1. Tentative d'analyse en tant que JSON brut ou ZIP contenant du JSON (.nm / .ss)
+    try:
+        text_content = raw_bytes.decode('utf-8', errors='ignore').strip()
+        data_json = None
+        
+        if text_content.startswith("{") or text_content.startswith("["):
+            data_json = json.loads(text_content)
+        elif zipfile.is_zipfile(io.BytesIO(raw_bytes)):
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+                content = z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
+                data_json = json.loads(content)
+        
+        if data_json:
+            formatted_lines = parse_json_recursive(data_json)
+            full_text = "\n".join(formatted_lines)
+            
+            # Découpage par morceaux si le texte est trop long pour Telegram (limite ~4000 caractères)
+            chunks = [full_text[i:i+3500] for i in range(0, len(full_text), 3500)]
+            for idx, chunk in enumerate(chunks):
+                header = "Full Config 🔓\n\n" if idx == 0 else ""
+                footer = f"\n\n👑 {SIGNATURE}" if idx == len(chunks) - 1 else ""
+                await update.message.reply_text(f"{header}{chunk}{footer}")
             return
-        except: pass
+    except Exception as e:
+        pass
 
     # 2. Essaie DARKTUNNEL base64
     decoded_text = None
@@ -60,7 +89,7 @@ async def handle_file(update: Update, context):
         except:
             decoded_text = base64.b64decode(txt_padded).decode('utf-8', errors='ignore')
         j = json.loads(decoded_text)
-        # --- C'est un .dark réussi ---
+        
         enc = j.get("encryptedLockedConfig",{}).get("EncryptedLockedConfig",{})
         v2 = enc.get("V2RayConfig",{}).get("EncryptedConfig",{})
         outbound = v2.get("outbounds",[{}])[0] if v2.get("outbounds") else {}
@@ -94,7 +123,7 @@ header host
     except:
         pass
 
-    # 3. Si c'est .nm et que tout échoue -> extraction brute du HOST dans le binaire
+    # 3. Si tout échoue -> extraction brute
     domains, ips, paths = extract_hosts_from_binary(raw_bytes)
 
     msg = f"""⚠️ Fichier {fname} chiffré (.nm / .ss)
@@ -110,19 +139,9 @@ Il n'est pas en Base64 simple, il faut la clé de l'app. Mais j'ai extrait ce qu
 📁 PATHS trouvés:
 {chr(10).join(paths[:10]) if paths else 'Aucun'}
 
-💡 Pour avoir le vrai HOST, envoie-moi le fichier original .nm sur WhatsApp je te le décrypte avec la clé Napsternet.
-
 👑 {SIGNATURE}
 """
     await update.message.reply_text(msg)
-
-    # Envoie quand même le txt avec extraction
-    txt_content = f"Extraction brute par {SIGNATURE}\nFile: {fname}\n\nDomains: {domains}\nIPs: {ips}\nPaths: {paths}\n\nRaw size: {len(raw_bytes)} bytes\n"
-    await update.message.reply_document(
-        document=io.BytesIO(txt_content.encode('utf-8')),
-        filename=f"{fname}_HOSTS.txt",
-        caption=f"✅ Extraction HOST\n👤 {user}\n👑 {SIGNATURE}"
-    )
 
 async def chat_gpt(update: Update, context):
     uid = update.effective_user.id
@@ -141,3 +160,4 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
 app.run_polling()
+    
