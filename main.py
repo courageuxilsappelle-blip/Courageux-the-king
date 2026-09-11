@@ -12,71 +12,120 @@ flask_app = Flask(__name__)
 @flask_app.route('/')
 def home(): return "Bot COURAGEUX"
 
-def b64_try_decode(s):
+def b64_decode(s):
     try:
-        s = s.strip()
+        s = s.strip().replace("darktunnel://","")
         s += "=" * (-len(s) % 4)
         return base64.urlsafe_b64decode(s).decode('utf-8', errors='ignore')
     except:
         try:
             s += "=" * (-len(s) % 4)
             return base64.b64decode(s).decode('utf-8', errors='ignore')
-        except:
-            return None
+        except: return None
+
+def format_like_univers(data, indent=0):
+    out = ""
+    prefix = " " * indent
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(v, dict):
+                icon = "[✧]" if indent==0 else "[~]"
+                out += f"{prefix}{icon} [{k}] :\n"
+                out += format_like_univers(v, indent+1)
+            elif isinstance(v, list):
+                icon = "[✧]" if indent==0 else "[~]"
+                out += f"{prefix}{icon} [{k}] :\n"
+                for item in v:
+                    out += format_like_univers(item, indent+1)
+            else:
+                out += f"{prefix} [-] [{k}] : {v}\n"
+    return out
 
 async def start(update: Update, context):
-    await update.message.reply_text(f"Je suis {SIGNATURE}\nEnvoie ton YOUTUBE.dark, je te sors le HOST / SERVER direct.")
+    await update.message.reply_text(f"Je suis {SIGNATURE}\nEnvoie ton.dark YOUTUBE, je te le déchiffre style Univers!")
 
 async def handle_dark(update: Update, context):
     doc = update.message.document
     fname = doc.file_name
     user = update.effective_user.first_name
-    f = await doc.get_file()
-    raw = (await f.download_as_bytearray()).decode('utf-8', errors='ignore').strip()
+    file = await doc.get_file()
+    raw = (await file.download_as_bytearray()).decode('utf-8', errors='ignore').strip()
 
-    # 1ere couche darktunnel://
-    payload = raw.replace("darktunnel://", "").strip()
-    first = b64_try_decode(payload)
-    if not first:
-        await update.message.reply_text("❌ 1ere couche non décodable")
+    # Décodage darktunnel
+    decoded = b64_decode(raw)
+    if not decoded:
+        await update.message.reply_text("❌ Fichier non décodable")
         return
 
     try:
-        j = json.loads(first)
+        j = json.loads(decoded)
     except:
-        await update.message.reply_text(f"1ere couche décodée mais pas JSON:\n{first[:3000]}")
+        await update.message.reply_text(f"Décodé mais pas JSON:\n{decoded[:3000]}")
         return
 
-    # 2eme couche encryptedLockedConfig
-    enc_locked = j.get("encryptedLockedConfig", "")
-    second_decoded = b64_try_decode(enc_locked) if isinstance(enc_locked, str) else None
+    # Format style Univers
+    pretty_univers = format_like_univers(j)
 
-    # Essaye de parser la 2eme couche
-    host_info = "Non trouvé"
-    server_info = "Non trouvé"
-    payload_info = "Non trouvé"
+    # Message principal comme sur ta capture
+    caption = f"""📂 File : {fname}
+✅ Decrypted by {SIGNATURE}
 
-    if second_decoded:
-        try:
-            j2 = json.loads(second_decoded)
-            pretty2 = json.dumps(j2, indent=2, ensure_ascii=False)
-            # Cherche le HOST partout
-            text_all = json.dumps(j2)
-            # Extraction intelligente
-            if "ProxyHost" in text_all or "Host" in text_all:
-                host_info = pretty2[:3000]
-        except:
-            # Si c'est pas JSON, c'est peut-être encore encodé
-            host_info = second_decoded[:3000]
+{pretty_univers[:3500]}
+"""
 
-    # Extraction directe du JSON principal si déjà présent
-    full_pretty = json.dumps(j, indent=4, ensure_ascii=False)
+    await update.message.reply_text(caption)
 
-    # Message final avec HOST
-    msg = f"""✅ **Decrypted Successfully**
-👤 Requested by: {user}
+    # Deuxième message avec HOST extrait clairement
+    try:
+        host = j['encryptedLockedConfig']['EncryptedLockedConfig']['InjectConfig']['EncryptedProxyHost']
+        port = j['encryptedLockedConfig']['EncryptedLockedConfig']['InjectConfig']['EncryptedProxyPort']
+        payload = j['encryptedLockedConfig']['EncryptedLockedConfig']['InjectConfig']['EncryptedPayload']
+        await update.message.reply_text(f"""🌐 **HOST EXTRAIT:**
 
-📁 File: {fname}
-🔓 Type: {j.get('type','TROJAN')} - {j.get('name','YOUTUBE')}
+**ProxyHost:** {host}
+**ProxyPort:** {port}
+**Payload:** {payload}
 
-🌐 **SERVEUR / HOST trouvé:**
+👑 {SIGNATURE}""")
+    except:
+        pass
+
+    # Fichier.txt
+    txt_content = f"""Document de {SIGNATURE}
+File: {fname}
+Requested by: {user}
+
+{pretty_univers}
+
+--- RAW JSON ---
+{json.dumps(j, indent=4, ensure_ascii=False)}
+
+{SIGNATURE}
+"""
+    keyboard = [[InlineKeyboardButton("📤 EXPORT AS UNLOCKED", callback_data="export")],
+                [InlineKeyboardButton("Contacter le King 🔥", url="https://wa.me/243973622250")]]
+
+    await update.message.reply_document(
+        document=io.BytesIO(txt_content.encode('utf-8')),
+        filename=f"{fname}.txt",
+        caption=f"✅ Decrypted Successfully\n👤 Requested by: {user}\n👑 {SIGNATURE}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def chat_gpt(update: Update, context):
+    uid = update.effective_user.id
+    if uid not in conversations: conversations[uid]=[]
+    conversations[uid].append({"role":"user","content":update.message.text})
+    conversations[uid]=conversations[uid][-20:]
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"system","content":f"Tu es {SIGNATURE}"}]+conversations[uid])
+    rep = comp.choices[0].message.content
+    conversations[uid].append({"role":"assistant","content":rep})
+    await update.message.reply_text(f"{rep}\n\n— {SIGNATURE}")
+
+threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT",10000))), daemon=True).start()
+app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.Document.ALL, handle_dark))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
+app.run_polling()
