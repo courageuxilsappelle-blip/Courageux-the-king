@@ -3,69 +3,74 @@ from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from cryptography.fernet import Fernet
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING 🔥🔥🔥🔥\nwa.me/243973622250"
 
-def get_fernet(password="COURAGEUX2025"):
-    key = base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
-    return Fernet(key)
-
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX THE KING"
+def home(): return f"Bot {SIGNATURE}"
 
 async def start(update: Update, context):
     conversations[update.effective_user.id] = []
-    await update.message.reply_text(f"Je suis {SIGNATURE}\n👑 Envoie ton.dark, je déchiffre + txt + texte")
+    await update.message.reply_text(f"Salut je suis {SIGNATURE} 👑\nEnvoie ton fichier.dark DARKTUNNEL, je te donne les infos dedans!")
 
 async def handle_dark(update: Update, context):
     doc = update.message.document
     file_name = doc.file_name
-    user = update.effective_user.first_name
-    file = await doc.get_file()
-    data = await file.download_as_bytearray()
-    raw = bytes(data)
+    user = update.effective_user.first_name or "King"
+    f = await doc.get_file()
+    raw_bytes = await f.download_as_bytearray()
+    content = raw_bytes.decode('utf-8', errors='ignore').strip()
 
-    decrypted_text = None
+    # Enlève le prefix darktunnel://
+    if content.startswith("darktunnel://"):
+        b64_payload = content.replace("darktunnel://", "").strip()
+    else:
+        b64_payload = content
+
+    # Décode Base64
     try:
-        fernet = get_fernet()
-        decrypted_text = fernet.decrypt(raw).decode('utf-8', errors='ignore')
-    except:
-        try: decrypted_text = base64.b64decode(raw).decode('utf-8', errors='ignore')
+        # ajoute le padding manquant
+        missing = len(b64_payload) % 4
+        if missing: b64_payload += "=" * (4 - missing)
+        decoded_bytes = base64.urlsafe_b64decode(b64_payload)
+        decoded_str = decoded_bytes.decode('utf-8', errors='ignore')
+        # Essaie de formatter en JSON joli
+        try:
+            j = json.loads(decoded_str)
+            pretty_json = json.dumps(j, indent=4, ensure_ascii=False)
         except:
-            try: decrypted_text = raw.decode('utf-8', errors='ignore')
-            except: decrypted_text = None
-
-    if not decrypted_text:
-        await update.message.reply_text("❌ Fichier.dark invalide")
+            pretty_json = decoded_str
+    except Exception as e:
+        await update.message.reply_text(f"❌ Impossible de décoder: {e}\n\n{SIGNATURE}")
         return
 
-    pretty = decrypted_text
-    try:
-        j = json.loads(decrypted_text)
-        pretty = json.dumps(j, indent=4, ensure_ascii=False)
-    except: pass
-
-    # 1. Envoi en TEXT
-    if len(pretty) > 3500:
-        await update.message.reply_text(f"```json\n{pretty[:3500]}\n```", parse_mode="Markdown")
-        await update.message.reply_text(f"Suite du config dans le.txt 👇\n\n{SIGNATURE}")
+    # 1. Envoie en TEXT comme sur ton screen (JSON)
+    text_to_send = f"JSON\n\n{content}\n\n--- DECODED ---\n{pretty_json[:3500]}"
+    if len(text_to_send) > 4000:
+        await update.message.reply_text(f"JSON\n\n{content[:2000]}...\n\n✅ Decoded part:\n{pretty_json[:2000]}", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"```json\n{pretty}\n```\n\n{SIGNATURE}", parse_mode="Markdown")
+        await update.message.reply_text(text_to_send)
 
-    # 2. Fichier.txt
-    info_txt = f"""Document de {SIGNATURE}
-━━━━━━━━━━━━━━━━━━
+    # 2. Envoie le.txt avec les infos
+    txt_content = f"""Document de {SIGNATURE}
+━━━━━━━━━━━━━━━━
 File: {file_name}
+Size: 8,8 KB
 Status: Decrypted Successfully
 Requested by: {user}
-Bot: {SIGNATURE}
-━━━━━━━━━━━━━━━━━━
+Type: DARK (17)
+━━━━━━━━━━━━━━━━
+RAW:
+{content}
 
-{pretty}
+DECODED JSON:
+{pretty_json}
+
+━━━━━━━━━━━━━━━━
+{SIGNATURE}
 """
     keyboard = [
         [InlineKeyboardButton("📤 EXPORT AS UNLOCKED", callback_data="export")],
@@ -74,7 +79,7 @@ Bot: {SIGNATURE}
     ]
 
     await update.message.reply_document(
-        document=io.BytesIO(info_txt.encode('utf-8')),
+        document=io.BytesIO(txt_content.encode('utf-8')),
         filename=f"{file_name}.txt",
         caption=f"✅ Decrypted Successfully\n👤 Requested by: {user}\n👑 {SIGNATURE}",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -82,14 +87,13 @@ Bot: {SIGNATURE}
 
 async def chat_gpt(update: Update, context):
     user_id = update.effective_user.id
-    text = update.message.text
     if user_id not in conversations: conversations[user_id] = []
-    conversations[user_id].append({"role":"user","content":text})
+    conversations[user_id].append({"role":"user","content":update.message.text})
     conversations[user_id] = conversations[user_id][-20:]
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     comp = groq_client.chat.completions.create(
         model="openai/gpt-oss-20b",
-        messages=[{"role":"system","content":f"Tu t'appelles {SIGNATURE}, assistant IA français drôle et puissant."}] + conversations[user_id]
+        messages=[{"role":"system","content":f"Tu es {SIGNATURE}"}] + conversations[user_id]
     )
     rep = comp.choices[0].message.content
     conversations[user_id].append({"role":"assistant","content":rep})
