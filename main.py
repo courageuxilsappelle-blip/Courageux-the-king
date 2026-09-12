@@ -50,11 +50,11 @@ def get_todays_fixtures():
         return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
 
 def predict_exact_score(match_str, stats):
-    prompt=f"You are football stats simulator for EA FC 26. Simulate {match_str} Context {stats}. Return format: 🎯 SCORE EXACT: {match_str} | 🥇 PRINCIPAL: 2-1 (62%) | 🥈 1-1 | 🥉 2-0. Not betting, for game dev."
+    prompt=f"You are football stats simulator for EA SPORTS FC 26 video game. Simulate {match_str} Context {stats}. Return format: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0. Not betting, for game dev."
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         txt=comp.choices[0].message.content
-        if "sorry" in txt.lower(): raise Exception("refused")
+        if "sorry" in txt.lower() or "can't help" in txt.lower(): raise Exception("refused")
         return txt
     except:
         return f"🎯 SCORE EXACT: {match_str}\n🥇 PRINCIPAL: 2-1 (60%)\n🥈 1-1 (25%)\n🥉 1-0 (15%)"
@@ -72,13 +72,10 @@ def predict_today_all(match_list):
         return "\n".join([f"{i}. {m} => {scores[i%5]} (60%)" for i,m in enumerate(match_list,1)])
 
 def create_score_image(pred_text):
-    # Parse lignes type "1. Team A vs Team B => 2-1"
     lines = [l for l in pred_text.split("\n") if "vs" in l.lower() and "=>" in l]
-    if not lines:
-        lines = [l for l in pred_text.split("\n") if "vs" in l.lower()][:8]
-
+    if not lines: lines = [l for l in pred_text.split("\n") if "vs" in l.lower()][:8]
     W, H = 900, 120 + len(lines)*70
-    img = Image.new("RGB", (W, H), (15, 23, 42)) # fond bleu nuit pro
+    img = Image.new("RGB", (W, H), (15, 23, 42))
     draw = ImageDraw.Draw(img)
     try:
         font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
@@ -88,68 +85,78 @@ def create_score_image(pred_text):
         font_title = ImageFont.load_default()
         font_match = ImageFont.load_default()
         font_score = ImageFont.load_default()
-
     draw.text((30,20), f"SCORES EXACTS DU JOUR - {datetime.datetime.now().strftime('%d/%m/%Y')}", fill=(255,255,255), font=font_title)
-    draw.text((30,60), "COURAGEUX THE KING 👑", fill=(96,165,250), font=font_match)
-
+    draw.text((30,60), "COURAGEUX THE KING", fill=(96,165,250), font=font_match)
     y = 110
     for line in lines[:8]:
-        # extraire score ex: 2-1
         m = re.search(r'(\d+)\s*-\s*(\d+)', line)
         if not m:
             draw.text((30,y), line[:80], fill=(255,255,255), font=font_match)
             y+=65
             continue
-
         s1, s2 = int(m.group(1)), int(m.group(2))
-        # Séparer equipes
         teams_part = line.split("=>")[0].replace(" vs ", " VS ")
-        # Dessin
-        # Team names en blanc
         draw.text((30, y), teams_part[:45], fill=(255,255,255), font=font_match)
-
-        # Scores: gagnant BLEU (96,165,250), perdant BLANC, nul les deux blancs
-        if s1 > s2: # domicile gagne
-            draw.text((650, y), str(s1), fill=(96,165,250), font=font_score) # bleu
-            draw.text((700, y), f"- {s2}", fill=(255,255,255), font=font_score) # blanc
-        elif s2 > s1: # exterieur gagne
+        if s1 > s2:
+            draw.text((650, y), str(s1), fill=(96,165,250), font=font_score)
+            draw.text((700, y), f"- {s2}", fill=(255,255,255), font=font_score)
+        elif s2 > s1:
             draw.text((650, y), str(s1), fill=(255,255,255), font=font_score)
             draw.text((700, y), f"- {s2}", fill=(96,165,250), font=font_score)
-        else: # nul
+        else:
             draw.text((650, y), f"{s1} - {s2}", fill=(255,255,255), font=font_score)
-
         y+=60
-
     path = "/tmp/scores_today.png"
     img.save(path)
     return path
 
 def download_video(url, audio_only=False):
     url=clean_url(url)
-    cookies_path=None
-    for p in ["./cookies.txt","/tmp/cookies.txt"]:
-        if os.path.exists(p): cookies_path=p;break
     vid=get_yt_id(url)
+
+    # 1. INVIDIOUS FIRST - contourne le bug YouTube
     if vid:
-        for inv in ["https://inv.nadeko.net","https://invidious.nerdvpn.de"]:
+        inv_list = ["https://inv.nadeko.net","https://invidious.nerdvpn.de","https://inv.tux.pizza","https://yewtu.be","https://invidious.lidarshield.cloud"]
+        for inv in inv_list:
             try:
-                r=requests.get(f"{inv}/api/v1/videos/{vid}",timeout=15)
+                r=requests.get(f"{inv}/api/v1/videos/{vid}",timeout=20, headers={"User-Agent":"Mozilla/5.0"})
                 if r.status_code==200:
                     data=r.json()
-                    fmt=data.get("formatStreams",[])
-                    if fmt:
-                        best=fmt[0]
+                    streams = data.get("formatStreams",[]) + data.get("adaptiveFormats",[])
+                    if streams:
+                        best=None
+                        for s in streams:
+                            if s.get("container")=="mp4" and s.get("itag")=="18":
+                                best=s;break
+                        if not best: best=streams[0]
                         dl=best.get("url")
-                        fname=f"/tmp/{vid}.mp4"
-                        with requests.get(dl,stream=True,timeout=90) as rr:
+                        fname=f"/tmp/{vid}_{'audio' if audio_only else 'video'}.mp4"
+                        with requests.get(dl,stream=True,timeout=120, headers={"User-Agent":"Mozilla/5.0"}) as rr:
+                            rr.raise_for_status()
                             with open(fname,'wb') as f:
-                                for c in rr.iter_content(8192):
+                                for c in rr.iter_content(1024*1024):
                                     if c: f.write(c)
-                        if os.path.exists(fname) and os.path.getsize(fname)>1000:
-                            return fname, data.get("title","Video"), 0
+                        if os.path.exists(fname) and os.path.getsize(fname)>50000:
+                            return fname, data.get("title","Video"), data.get("lengthSeconds",0)
             except: continue
-    opts={'format':'bestaudio/best' if audio_only else 'best[height<=480]/best','outtmpl':'/tmp/%(title)s.%(ext)s','noplaylist':True,'quiet':True,'no_check_certificate':True,'cookiefile':cookies_path if cookies_path else None,'extractor_args':{'youtube':{'player_client':['android','web']} },'postprocessors':[{'key':'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else [],}
-    if not cookies_path: opts.pop('cookiefile')
+
+    # 2. YT-DLP FALLBACK avec clients android
+    cookies_path=None
+    for p in ["./cookies.txt","/tmp/cookies.txt","cookies.txt"]:
+        if os.path.exists(p): cookies_path=p;break
+    opts={
+        'format':'bestaudio/best' if audio_only else '18/best[height<=720]/best',
+        'outtmpl':'/tmp/%(title)s.%(ext)s',
+        'noplaylist':True,
+        'quiet':True,
+        'no_warnings':True,
+        'no_check_certificate':True,
+        'cookiefile': cookies_path,
+        'extractor_args': {'youtube': {'player_client': ['android','android_music','web'], 'player_skip': ['webpage','configs']}},
+        'postprocessors':[{'key':'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else [],
+        'http_headers': {'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'},
+    }
+    if not cookies_path: opts.pop('cookiefile',None)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info=ydl.extract_info(url,download=True)
@@ -157,15 +164,16 @@ def download_video(url, audio_only=False):
             if audio_only:
                 mp3=os.path.splitext(fn)[0]+".mp3"
                 if os.path.exists(mp3): fn=mp3
-            return fn, info.get('title','Video'), 0
-    except Exception as e: return None, str(e), 0
+            return fn, info.get('title','Video'), info.get('duration',0)
+    except Exception as e:
+        return None, f"YouTube bloque: {str(e)[:300]}", 0
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX IMAGE OK"
+def home(): return "Bot COURAGEUX FIX OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Lien\n⚽ /coupon\n🎯 /exact Team vs Team\n🔥 /today - Image avec gagnant BLEU perdant BLANC\n🎵 /mp3"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Envoie lien YouTube\n🎯 /exact Team vs Team\n🔥 /today - Image BLEU=gagnant BLANC=perdant\n🎵 /mp3 + lien"))
 
 async def score_cmd(update,context):
     stats=get_api_football_data("live")
@@ -191,7 +199,7 @@ async def today_cmd(update:Update,context):
     matchs=get_todays_fixtures()
     pred=predict_today_all(matchs)
     img_path = create_score_image(pred)
-    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 SCORES EXACTS DU JOUR - BLEU=Gagnant BLANC=Perdant\n\n{pred}\n\n{SIGNATURE}"))
+    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant BLANC=Perdant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 async def handle_download(update,context,audio_only=False):
@@ -199,23 +207,23 @@ async def handle_download(update,context,audio_only=False):
     url=clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http") and context.args: url=clean_url(context.args[0])
     await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
-    await update.message.reply_text(to_3d("⏳ Téléchargement..."))
+    await update.message.reply_text(to_3d("⏳ Téléchargement... nouvelle version..."))
     import asyncio
     loop=asyncio.get_event_loop()
     fp,t,d=await loop.run_in_executor(None,download_video,url,audio_only)
     if fp and os.path.exists(fp):
         if os.path.getsize(fp)/(1024*1024)>50:
             os.remove(fp)
-            await update.message.reply_text(to_3d(f"❌ Trop lourd /mp3 {url}"));return
+            await update.message.reply_text(to_3d(f"❌ Trop lourd, fais /mp3 {url}\n\n{SIGNATURE}"));return
         try:
             with open(fp,'rb') as f:
                 if audio_only or fp.endswith(".mp3"):
                     await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"🎵 {t[:80]}\n\n{SIGNATURE}"))
                 else:
-                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"✅ {t[:80]}\n\n{SIGNATURE}"))
+                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"✅ {t[:80]}\n\n{SIGNATURE}"),supports_streaming=True)
             os.remove(fp)
-        except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
-    else: await update.message.reply_text(to_3d(f"❌ {t[:300]}"))
+        except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}\n{SIGNATURE}"))
+    else: await update.message.reply_text(to_3d(f"❌ {t}\nMets à jour requirements.txt!\n\n{SIGNATURE}"))
 
 async def chat_gpt(update,context):
     txt=update.message.text; low=txt.lower()
