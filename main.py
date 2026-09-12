@@ -105,20 +105,20 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX PHOTO FIX OK"
+def home(): return "Bot COURAGEUX FIXED 404 OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question je reponds\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess - Serveurs V2Ray\n💬 Pose moi n'importe quelle question!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n💬 Chat libre!"))
 
 async def vmess_cmd(update, context):
     servers = get_random_vmess(5)
     if not servers:
-        await update.message.reply_text("❌ Aucun serveur trouvé. Vérifie vmess.txt\n\nCOURAGEUX THE KING")
+        await update.message.reply_text("❌ Aucun serveur trouvé.\n\nCOURAGEUX THE KING")
         return
     text = "🔐 SERVEURS VMESS ACTIFS - COURAGEUX THE KING\n\n"
     for i, vm in enumerate(servers, 1):
         text += f"{i}. {vm}\n\n"
-    text += "📲 Copie colle direct dans V2RayNG / DarkTunnel\n✅ Lien brut importable\n\nCOURAGEUX THE KING"
+    text += "📲 Copie colle dans V2RayNG / DarkTunnel\n✅ Lien brut importable\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
 
 async def exact_cmd(update:Update,context):
@@ -137,13 +137,11 @@ async def today_cmd(update:Update,context):
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 async def handle_download(update,context,audio_only=False):
-    raw=update.message.text.strip() if update.message.text else update.message.caption or ""
+    raw=update.message.text or update.message.caption or ""
     url=clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http") and context.args: url=clean_url(context.args[0])
-    if not url.startswith("http"):
-        # Cherche URL dans le caption
-        m=re.search(r'https?://\S+', raw)
-        if m: url=clean_url(m.group(0))
+    m=re.search(r'https?://\S+', raw)
+    if m: url=clean_url(m.group(0))
     await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
     await update.message.reply_text(to_3d("⏳ Téléchargement..."))
     import asyncio
@@ -160,33 +158,51 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === FIX PHOTO + CAPTION ===
+# === FIX FINAL PHOTO ===
 async def handle_photo(update:Update, context):
     caption = update.message.caption or ""
-    question = caption if caption else "Analyse cette photo en détail"
+    question = caption if caption else "Analyse cette photo, c'est quel site et à quoi ça sert?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(to_3d(f"📸 Photo reçue!\n❓ Question: {question}\n⏳ Analyse..."))
+    await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {question}\n⏳ Analyse..."))
     try:
         photo_file = await update.message.photo[-1].get_file()
         file_path = "/tmp/analyse.jpg"
         await photo_file.download_to_drive(file_path)
         with open(file_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
-        completion = groq_client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=[
-                {"role":"system","content":f"Tu es {SIGNATURE}, expert analyse image, français + lingala. Réponds à la question sur l'image."},
-                {"role":"user","content":[
-                    {"type":"text","text": question},
-                    {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-                ]}
-            ],
-            temperature=0.5
-        )
+
+        # ESSAIE 11B D'ABORD
+        try:
+            completion = groq_client.chat.completions.create(
+                model="llama-3.2-11b-vision-preview",
+                messages=[
+                    {"role":"user","content":[
+                        {"type":"text","text": question},
+                        {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+                    ]}
+                ],
+                temperature=0.5,
+                max_tokens=800
+            )
+        except Exception as e1:
+            # SI 11B RATE, ESSAIE 90B
+            print(f"11b failed {e1}, trying 90b")
+            completion = groq_client.chat.completions.create(
+                model="llama-3.2-90b-vision-preview",
+                messages=[
+                    {"role":"user","content":[
+                        {"type":"text","text": question},
+                        {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+                    ]}
+                ],
+                temperature=0.5,
+                max_tokens=800
+            )
+
         rep = completion.choices[0].message.content
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(to_3d(f"❌ Erreur: {str(e)[:300]}\n\n{SIGNATURE}"))
+        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:500]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     txt=update.message.text or update.message.caption or ""
@@ -194,13 +210,13 @@ async def chat_gpt(update,context):
     if is_link(txt): await handle_download(update,context,False);return
     if "exact" in low and "vs" in low: await exact_cmd(update,context);return
     if "today" in low or "tous" in low or "aujourd'hui" in low: await today_cmd(update,context);return
-    if "vmess" in low or "v2ray" in low or "serveur" in low: await vmess_cmd(update,context);return
+    if "vmess" in low or "v2ray" in low: await vmess_cmd(update,context);return
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     try:
-        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, drôle, français + lingala."}]+conversations[uid][-10:],temperature=0.7)
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, français + lingala."}]+conversations[uid][-10:],temperature=0.7)
         rep=comp.choices[0].message.content
     except: rep="Yo Boss! Je suis là!"
     conversations[uid].append({"role":"assistant","content":rep})
