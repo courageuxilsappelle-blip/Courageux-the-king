@@ -4,63 +4,48 @@ from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from telegram import Update
 from PIL import Image, ImageDraw, ImageFont
-import yt_dlp
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
 
-# === STATS USERS ===
+# === STATS ===
 USERS_FILE = "users.txt"
-def save_user(user_id):
+def save_user(uid):
     try:
-        if not os.path.exists(USERS_FILE):
-            open(USERS_FILE, "w").close()
-        with open(USERS_FILE, "r") as f:
-            ids = f.read().split()
-        if str(user_id) not in ids:
-            with open(USERS_FILE, "a") as f:
-                f.write(f"{user_id}\n")
+        if not os.path.exists(USERS_FILE): open(USERS_FILE,"w").close()
+        with open(USERS_FILE,"r") as f: data=f.read()
+        if str(uid) not in data:
+            with open(USERS_FILE,"a") as f: f.write(f"{uid}\n")
     except: pass
-
 def get_total_users():
     try:
-        if not os.path.exists(USERS_FILE):
-            return 0
-        with open(USERS_FILE, "r") as f:
-            return len([l for l in f if l.strip()])
+        if not os.path.exists(USERS_FILE): return 0
+        with open(USERS_FILE,"r") as f: return len([l for l in f if l.strip()])
     except: return 0
 
 async def stats_cmd(update, context):
     total = get_total_users()
-    await update.message.reply_text(
-        f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n"
-        f"👥 Total utilisateurs: {total}\n"
-        f"💬 Conversations actives: {len(conversations)}\n"
-        f"🕒 Date: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        f"{SIGNATURE}"
-    )
+    await update.message.reply_text(f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n👥 Total utilisateurs: {total}\n💬 Chats actifs: {len(conversations)}\n🕒 {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n{SIGNATURE}")
 
 # === VMESS ===
 VMESS_FILE = "vmess.txt"
 def load_vmess():
     try:
-        env_data = os.getenv("VMESS_DATA")
-        if env_data:
-            return [l.strip() for l in env_data.splitlines() if l.strip().startswith("vmess://")]
+        env=os.getenv("VMESS_DATA")
+        if env: return [l.strip() for l in env.splitlines() if l.strip().startswith("vmess://")]
         if os.path.exists(VMESS_FILE):
-            with open(VMESS_FILE, "r") as f:
-                return [l.strip() for l in f if l.strip().startswith("vmess://")]
+            with open(VMESS_FILE,"r") as f: return [l.strip() for l in f if l.strip().startswith("vmess://")]
         return []
     except: return []
 def get_random_vmess(n=5):
-    all_servers = load_vmess()
-    if not all_servers: return None
-    return random.sample(all_servers, min(n, len(all_servers)))
+    all_s=load_vmess()
+    if not all_s: return None
+    return random.sample(all_s, min(n, len(all_s)))
 
 def to_3d(t):
-    normal = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-    bold3d = "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
+    normal="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    bold3d="𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
     return "".join([bold3d[normal.index(c)] if c in normal else c for c in t])
 
 def clean_url(u): return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0].split('&si=')[0]
@@ -136,28 +121,24 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX STATS + QWEN OK"
+def home(): return "Bot COURAGEUX FINAL 400 TOKENS OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
     await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n📊 /stats\n💬 Chat libre!"))
-
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
-    servers = get_random_vmess(5)
+    servers=get_random_vmess(5)
     if not servers:
-        await update.message.reply_text("❌ Aucun serveur trouvé.\n\nCOURAGEUX THE KING")
-        return
-    text = "🔐 SERVEURS VMESS ACTIFS - COURAGEUX THE KING\n\n"
-    for i, vm in enumerate(servers, 1):
-        text += f"{i}. {vm}\n\n"
-    text += "📲 Copie colle dans V2RayNG / DarkTunnel\n✅ Lien brut importable\n\nCOURAGEUX THE KING"
+        await update.message.reply_text("❌ Aucun serveur trouvé.\n\nCOURAGEUX THE KING"); return
+    text="🔐 SERVEURS VMESS - COURAGEUX THE KING\n\n"
+    for i,vm in enumerate(servers,1): text+=f"{i}. {vm}\n\n"
+    text+="📲 V2RayNG / DarkTunnel\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
-
 async def exact_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
-    if not context.args: await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal"));return
+    if not context.args: await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal")); return
     match_query=" ".join(context.args)
     pred=predict_exact_score(match_query)
     img_path=create_score_image(pred)
@@ -170,7 +151,6 @@ async def today_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw=update.message.text or update.message.caption or ""
@@ -194,39 +174,47 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION QWEN ===
+# === VISION FIX 429 - QWEN 400 TOKENS + COMPRESS ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
-    caption = update.message.caption or ""
-    question = caption if caption else "Analyse cette photo en détail, c'est quel site et à quoi ça sert?"
+    caption=update.message.caption or "Tu connais ce site?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {question}\n⏳ Analyse avec Qwen..."))
+    await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {caption}\n⏳ Analyse..."))
     try:
-        photo_file = await update.message.photo[-1].get_file()
-        file_path = "/tmp/analyse.jpg"
+        photo_file=await update.message.photo[-1].get_file()
+        file_path="/tmp/analyse.jpg"
         await photo_file.download_to_drive(file_path)
+        # compresse pour éviter 429 input
+        try:
+            im=Image.open(file_path)
+            im.thumbnail((512,512))
+            im.save(file_path, "JPEG", quality=70)
+        except: pass
         with open(file_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode('utf-8')
-        completion = groq_client.chat.completions.create(
+            b64=base64.b64encode(f.read()).decode('utf-8')
+        completion=groq_client.chat.completions.create(
             model="qwen/qwen3.6-27b",
-            messages=[{"role":"user","content":[{"type":"text","text": question + " Réponds en français simple + un peu lingala."},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
+            messages=[{"role":"user","content":[
+                {"type":"text","text": caption + " Réponds très court max 5 lignes, français + lingala."},
+                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+            ]}],
             temperature=0.5,
-            max_tokens=1200
+            max_tokens=400
         )
-        rep = completion.choices[0].message.content
-        if "</think>" in rep: rep = rep.split("</think>")[-1].strip()
+        rep=completion.choices[0].message.content
+        if "</think>" in rep: rep=rep.split("</think>")[-1].strip()
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:600]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"❌ Erreur: {str(e)[:600]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     txt=update.message.text or update.message.caption or ""
     low=txt.lower()
-    if is_link(txt): await handle_download(update,context,False);return
-    if "exact" in low and "vs" in low: await exact_cmd(update,context);return
-    if "today" in low or "tous" in low or "aujourd'hui" in low: await today_cmd(update,context);return
-    if "vmess" in low or "v2ray" in low: await vmess_cmd(update,context);return
+    if is_link(txt): await handle_download(update,context,False); return
+    if "exact" in low and "vs" in low: await exact_cmd(update,context); return
+    if "today" in low or "tous" in low or "aujourd'hui" in low: await today_cmd(update,context); return
+    if "vmess" in low or "v2ray" in low: await vmess_cmd(update,context); return
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
