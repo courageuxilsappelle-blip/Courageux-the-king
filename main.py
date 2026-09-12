@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime, random
+import os, re, requests, threading, datetime, random, base64
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -21,12 +21,10 @@ def load_vmess():
             with open(VMESS_FILE, "r") as f:
                 return [l.strip() for l in f if l.strip().startswith("vmess://")]
         return []
-    except:
-        return []
+    except: return []
 def get_random_vmess(n=5):
     all_servers = load_vmess()
-    if not all_servers:
-        return None
+    if not all_servers: return None
     return random.sample(all_servers, min(n, len(all_servers)))
 
 def to_3d(t):
@@ -39,35 +37,22 @@ def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
-def get_real_scores():
-    try:
-        r=requests.get("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",timeout=8).json()
-        return "\n".join([e['name'] for e in r.get("events",[])[:10]])
-    except: return "Premier League, La Liga"
-def get_api_football_data(q):
-    try:
-        key=os.getenv("API_FOOTBALL_KEY")
-        if not key: return q
-        headers={"x-apisports-key":key}
-        resp=requests.get("https://v3.football.api-sports.io/fixtures?live=all",headers=headers,timeout=10).json()
-        return " | ".join([f"{f['teams']['home']['name']} {f['goals']['home']}-{f['goals']['away']} {f['teams']['away']['name']}" for f in resp.get("response",[])[:5]]) or q
-    except: return q
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
         today=datetime.datetime.now().strftime("%Y-%m-%d")
-        if not key: return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club","Bayern vs Dortmund","PSG vs Marseille"]
+        if not key: return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
         headers={"x-apisports-key":key}
         resp=requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
         matchs=[f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}" for f in resp.get("response",[])[:10]]
-        return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
-    except: return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
-def predict_exact_score(match_str, stats):
-    prompt=f"You are football stats simulator for EA FC 26. Simulate {match_str} Context {stats}. Return: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0. Not betting."
+        return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid"]
+    except: return ["Man City vs Arsenal","Barcelona vs Real Madrid"]
+def predict_exact_score(match_str, stats=""):
+    prompt=f"Simule EA FC 26: {match_str} Stats {stats}. Format: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0"
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
-    except: return f"🎯 SCORE EXACT: {match_str}\n🥇 PRINCIPAL: 2-1 (60%)\n🥈 1-1 (25%)\n🥉 1-0 (15%)"
+    except: return f"🎯 SCORE EXACT: {match_str}\n🥇 2-1 (60%)"
 def predict_today_all(match_list):
     liste="\n".join([f"- {m}" for m in match_list])
     prompt=f"Simulate EA FC 26:\n{liste}\nFORMAT: 1. Team A vs Team B => 2-1 (62%) | Secu 1-1 | Fun 2-0."
@@ -95,13 +80,7 @@ def create_score_image(pred_text):
         s1,s2=int(m.group(1)),int(m.group(2))
         teams_part=line.split("=>")[0][:45]
         draw.text((30,y),teams_part,fill=(255,255,255),font=font_match)
-        if s1>s2:
-            draw.text((650,y),str(s1),fill=(96,165,250),font=font_score)
-            draw.text((700,y),f"- {s2}",fill=(255,255,255),font=font_score)
-        elif s2>s1:
-            draw.text((650,y),str(s1),fill=(255,255,255),font=font_score)
-            draw.text((700,y),f"- {s2}",fill=(96,165,250),font=font_score)
-        else: draw.text((650,y),f"{s1} - {s2}",fill=(255,255,255),font=font_score)
+        draw.text((650,y),f"{s1} - {s2}",fill=(96,165,250),font=font_score)
         y+=60
     path="/tmp/scores_today.png"
     img.save(path)
@@ -109,40 +88,28 @@ def create_score_image(pred_text):
 def download_video(url, audio_only=False):
     url=clean_url(url)
     vid=get_yt_id(url) or "video"
-    for api in ["https://api.cobalt.tools/api/json","https://co.wuk.sh/api/json","https://cobalt-api.kwiatekmiki.com/api/json"]:
+    for api in ["https://api.cobalt.tools/api/json","https://co.wuk.sh/api/json"]:
         try:
             r=requests.post(api, json={"url":url,"vCodec":"h264","vQuality":"720","aFormat":"mp3" if audio_only else "best","isAudioOnly":audio_only}, headers={"Accept":"application/json","Content-Type":"application/json"}, timeout=30)
             if r.status_code==200:
-                data=r.json()
-                dl_url=data.get("url")
+                data=r.json(); dl_url=data.get("url")
                 if dl_url:
                     fname=f"/tmp/{vid}_{'audio.mp3' if audio_only else 'video.mp4'}"
                     with requests.get(dl_url, stream=True, timeout=120) as rr:
                         with open(fname,'wb') as f:
                             for c in rr.iter_content(1024*1024):
                                 if c: f.write(c)
-                    if os.path.getsize(fname)>50000:
-                        return fname, "Video", 0
+                    if os.path.getsize(fname)>50000: return fname, "Video", 0
         except: continue
-    try:
-        opts={'format':'bestaudio/best' if audio_only else '18/best','outtmpl':'/tmp/%(title)s.%(ext)s','noplaylist':True,'quiet':True,'extractor_args':{'youtube':{'player_client':['android']}},'postprocessors':[{'key':'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else []}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info=ydl.extract_info(url,download=True)
-            fn=ydl.prepare_filename(info)
-            if audio_only:
-                mp3=os.path.splitext(fn)[0]+".mp3"
-                if os.path.exists(mp3): fn=mp3
-            return fn, info.get('title','Video'), 0
-    except Exception as e: return None, str(e)[:200], 0
+    return None, "Erreur download", 0
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX VMESS FIXED OK"
+def home(): return "Bot COURAGEUX PHOTO FIX OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🎵 /mp3 + lien\n🔐 /vmess - Serveurs V2Ray\n💬 Pose moi n'importe quelle question!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question je reponds\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess - Serveurs V2Ray\n💬 Pose moi n'importe quelle question!"))
 
-# === FIX VMESS SANS 3D ===
 async def vmess_cmd(update, context):
     servers = get_random_vmess(5)
     if not servers:
@@ -151,21 +118,14 @@ async def vmess_cmd(update, context):
     text = "🔐 SERVEURS VMESS ACTIFS - COURAGEUX THE KING\n\n"
     for i, vm in enumerate(servers, 1):
         text += f"{i}. {vm}\n\n"
-    text += "📲 Copie colle direct dans V2RayNG / NapsternetV / DarkTunnel\n"
-    text += "✅ Lien brut importable\n\nCOURAGEUX THE KING"
+    text += "📲 Copie colle direct dans V2RayNG / DarkTunnel\n✅ Lien brut importable\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
 
-async def score_cmd(update,context):
-    stats=get_api_football_data("live")
-    await update.message.reply_text(to_3d(f"📊 LIVE:\n{stats}\n\n{SIGNATURE}"))
-async def coupon_cmd(update,context,typ="normal"):
-    comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Analyse stats football EA FC: {get_real_scores()}"}])
-    await update.message.reply_text(to_3d(f"{comp.choices[0].message.content}\n\n{SIGNATURE}"))
 async def exact_cmd(update:Update,context):
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     if not context.args: await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal"));return
     match_query=" ".join(context.args)
-    pred=predict_exact_score(match_query, get_api_football_data(match_query))
+    pred=predict_exact_score(match_query)
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
 async def today_cmd(update:Update,context):
@@ -175,10 +135,15 @@ async def today_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
+
 async def handle_download(update,context,audio_only=False):
-    raw=update.message.text.strip()
+    raw=update.message.text.strip() if update.message.text else update.message.caption or ""
     url=clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http") and context.args: url=clean_url(context.args[0])
+    if not url.startswith("http"):
+        # Cherche URL dans le caption
+        m=re.search(r'https?://\S+', raw)
+        if m: url=clean_url(m.group(0))
     await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
     await update.message.reply_text(to_3d("⏳ Téléchargement..."))
     import asyncio
@@ -195,27 +160,47 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
+# === FIX PHOTO + CAPTION ===
+async def handle_photo(update:Update, context):
+    caption = update.message.caption or ""
+    question = caption if caption else "Analyse cette photo en détail"
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    await update.message.reply_text(to_3d(f"📸 Photo reçue!\n❓ Question: {question}\n⏳ Analyse..."))
+    try:
+        photo_file = await update.message.photo[-1].get_file()
+        file_path = "/tmp/analyse.jpg"
+        await photo_file.download_to_drive(file_path)
+        with open(file_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode('utf-8')
+        completion = groq_client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {"role":"system","content":f"Tu es {SIGNATURE}, expert analyse image, français + lingala. Réponds à la question sur l'image."},
+                {"role":"user","content":[
+                    {"type":"text","text": question},
+                    {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+                ]}
+            ],
+            temperature=0.5
+        )
+        rep = completion.choices[0].message.content
+        await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+    except Exception as e:
+        await update.message.reply_text(to_3d(f"❌ Erreur: {str(e)[:300]}\n\n{SIGNATURE}"))
+
 async def chat_gpt(update,context):
-    txt=update.message.text
+    txt=update.message.text or update.message.caption or ""
     low=txt.lower()
-    if is_link(txt):
-        await handle_download(update,context,False);return
-    if "exact" in low and "vs" in low:
-        await exact_cmd(update,context);return
-    if "today" in low or "tous" in low or "aujourd'hui" in low:
-        await today_cmd(update,context);return
-    if any(k in low for k in ["coupon","pari","safe","combo"]):
-        await coupon_cmd(update,context);return
-    if "vmess" in low or "v2ray" in low or "serveur" in low:
-        await vmess_cmd(update,context);return
-    if "score" in low and "exact" not in low:
-        await score_cmd(update,context);return
+    if is_link(txt): await handle_download(update,context,False);return
+    if "exact" in low and "vs" in low: await exact_cmd(update,context);return
+    if "today" in low or "tous" in low or "aujourd'hui" in low: await today_cmd(update,context);return
+    if "vmess" in low or "v2ray" in low or "serveur" in low: await vmess_cmd(update,context);return
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     try:
-        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, drôle, parle français + lingala. Tu aides pour tout."}]+conversations[uid][-10:],temperature=0.7)
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, drôle, français + lingala."}]+conversations[uid][-10:],temperature=0.7)
         rep=comp.choices[0].message.content
     except: rep="Yo Boss! Je suis là!"
     conversations[uid].append({"role":"assistant","content":rep})
@@ -225,15 +210,12 @@ async def chat_gpt(update,context):
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000))),daemon=True).start()
 app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
 app.add_handler(CommandHandler("start",start))
-app.add_handler(CommandHandler("score",score_cmd))
-app.add_handler(CommandHandler("coupon",lambda u,c: coupon_cmd(u,c,"normal")))
-app.add_handler(CommandHandler("safe",lambda u,c: coupon_cmd(u,c,"safe")))
-app.add_handler(CommandHandler("combo",lambda u,c: coupon_cmd(u,c,"combo")))
 app.add_handler(CommandHandler("exact",exact_cmd))
 app.add_handler(CommandHandler("today",today_cmd))
 app.add_handler(CommandHandler("tous",today_cmd))
 app.add_handler(CommandHandler("vmess",vmess_cmd))
 app.add_handler(CommandHandler("v2ray",vmess_cmd))
 app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,chat_gpt))
+app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
 app.run_polling()
