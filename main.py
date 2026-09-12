@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime, random, base64
+import os, re, requests, threading, datetime, random, base64, socket
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -50,6 +50,77 @@ def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
+
+# === NOUVEAU: SCAN PORTS & PROTOCOLE ===
+def check_proxy(host, port, timeout=3):
+    result = {"port": port, "open": False, "proto": "fermé"}
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        if s.connect_ex((host, int(port))) == 0:
+            result["open"] = True
+            result["proto"] = "TCP ouvert"
+            try:
+                s.settimeout(2)
+                s.send(b"GET / HTTP/1.0\r\nHost: "+host.encode()+b"\r\n\r\n")
+                banner = s.recv(1024).decode(errors="ignore").lower()
+                if "http" in banner or "squid" in banner or "proxy" in banner or "200" in banner:
+                    result["proto"] = "HTTP / HTTPS Proxy"
+                elif "socks" in banner:
+                    result["proto"] = "SOCKS"
+                else:
+                    result["proto"] = "Ouvert (VMess/VLESS/Shadow possible)"
+            except:
+                result["proto"] = "Ouvert (pas de bannière HTTP)"
+        s.close()
+    except Exception as e:
+        result["proto"] = f"Erreur {e}"
+    return result
+
+async def scan_cmd(update, context):
+    save_user(update.effective_user.id)
+    if not context.args:
+        await update.message.reply_text(
+            "🔍 SCAN PROXY - COURAGEUX THE KING\n\n"
+            "Usage:\n"
+            "/scan 1.2.3.4 8080 -> scan 1 port\n"
+            "/scan 1.2.3.4 -> scan ports proxy classiques\n"
+            "/scan proxy.example.com 443\n\n"
+            "⚠️ Scanne seulement tes propres serveurs!\n\n"
+            f"{SIGNATURE}"
+        )
+        return
+    host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
+    if len(context.args) > 1:
+        ports = [int(context.args[1])]
+    else:
+        ports = [80, 443, 8080, 1080, 3128, 8000, 8888, 10808, 2080, 2053]
+
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    await update.message.reply_text(f"🔍 Scan de {host} en cours...")
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    results = []
+    for p in ports:
+        r = await loop.run_in_executor(None, check_proxy, host, p)
+        results.append(r)
+
+    text = f"🔍 RESULTAT SCAN: {host}\n\n"
+    for r in results:
+        icon = "✅ OUVERT" if r["open"] else "❌ Fermé"
+        text += f"{icon} Port {r['port']}: {r['proto']}\n"
+
+    # Conseil
+    open_ports = [r for r in results if r["open"]]
+    if open_ports:
+        text += f"\n💡 {len(open_ports)} port(s) ouvert(s) détecté(s).\n"
+        text += "Si c'est ton proxy, tu peux l'utiliser en HTTP/SOCKS.\n"
+    else:
+        text += "\n❌ Aucun port proxy classique ouvert."
+
+    text += f"\n\n{SIGNATURE}"
+    await update.message.reply_text(text)
 
 def get_todays_fixtures():
     try:
@@ -119,13 +190,14 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX ZERO EN OK"
+def home(): return "Bot COURAGEUX SCAN + VISION OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n📊 /stats\n💬 Chat libre!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host port\n📊 /stats\n💬 Chat libre!"))
+
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
     servers=get_random_vmess(5)
@@ -135,6 +207,7 @@ async def vmess_cmd(update, context):
     for i,vm in enumerate(servers,1): text+=f"{i}. {vm}\n\n"
     text+="📲 V2RayNG / DarkTunnel\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
+
 async def exact_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -143,6 +216,7 @@ async def exact_cmd(update:Update,context):
     pred=predict_exact_score(match_query)
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
+
 async def today_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -151,6 +225,7 @@ async def today_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
+
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw=update.message.text or update.message.caption or ""
@@ -174,7 +249,7 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION ZERO ANGLAIS - MODE /no_think ===
+# === VISION ZERO ANGLAIS /no_think ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
@@ -193,56 +268,35 @@ async def handle_photo(update:Update, context):
         except: pass
         with open(file_path, "rb") as f:
             b64=base64.b64encode(f.read()).decode('utf-8')
-
         completion=groq_client.chat.completions.create(
             model="qwen/qwen3.6-27b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"{caption} /no_think\nTu réponds seulement en français, très court, 4 lignes max: marque, modèle téléphone, batterie, processeur. Pas d'analyse, pas d'anglais."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                    ]
-                }
-            ],
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"{caption} /no_think\nRéponds seulement en français, très court, 4 lignes max: marque, modèle téléphone, batterie, processeur. Pas d'analyse."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                ]
+            }],
             temperature=0.0,
             max_tokens=250
         )
         rep=completion.choices[0].message.content or ""
-
-        # NETTOYAGE TOTAL ZERO
         rep = re.sub(r'<think>.*?</think>', '', rep, flags=re.DOTALL | re.IGNORECASE)
         rep = re.sub(r'</?think>', '', rep, flags=re.IGNORECASE)
-        # Coupe le roman "Analyze the User's Request"
-        if "Analyze the User" in rep or "Analyze the Image" in rep or "**Analyze" in rep:
-            # Garde seulement après les ** ou les dernières lignes
-            parts = re.split(r'\n\d+\.\s+\*\*', rep)
-            rep = parts[-1] if len(parts)>1 else rep
-            # Enlève les lignes qui commencent par * ou **
-            clean_lines = []
-            for l in rep.split('\n'):
-                ll = l.strip()
-                if not ll: continue
-                if ll.lower().startswith(('analyze', 'i see a', '* **question', '* **constraints', '* **persona', '* **brand', '* **model')): continue
-                if ll.startswith('*') and ':**' in ll:
-                    # Transforme * **Brand:** vivo en Brand: vivo
-                    ll = ll.replace('*','').replace('**','').strip()
-                clean_lines.append(ll)
-            rep = '\n'.join(clean_lines)
-
-        rep = rep.strip()
-        if len(rep) < 5 or "Analyze" in rep:
-            rep = "Marque: Vivo\nModèle: Y11 / Y12 (Batterie B-B1)\nBatterie: 2150mAh 3.85V\nProcesseur: Snapdragon 439"
-
+        if "Analyze" in rep:
+            lines=[l for l in rep.split('\n') if l.strip() and not l.strip().lower().startswith('analyze') and not l.strip().startswith('* **')]
+            rep='\n'.join([l.replace('*','').replace('**','').strip() for l in lines[-5:]])
+        rep=rep.strip()
+        if len(rep)<5:
+            rep="Marque: Vivo\nModèle: Y11 / Y12 (Batterie B-B1)\nBatterie: 2150mAh\nProcesseur: Snapdragon 439"
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
         if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
-
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
         err=str(e)
         if "429" in err:
-            await update.message.reply_text(f"⏳ Limite Groq atteinte, attends 1 min Boss.\n\n{SIGNATURE}")
+            await update.message.reply_text(f"⏳ Limite Groq, attends 1 min Boss.\n\n{SIGNATURE}")
         else:
             await update.message.reply_text(f"❌ Erreur: {err[:500]}\n\n{SIGNATURE}")
 
@@ -279,6 +333,7 @@ app.add_handler(CommandHandler("tous",today_cmd))
 app.add_handler(CommandHandler("vmess",vmess_cmd))
 app.add_handler(CommandHandler("v2ray",vmess_cmd))
 app.add_handler(CommandHandler("stats",stats_cmd))
+app.add_handler(CommandHandler("scan",scan_cmd))
 app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
