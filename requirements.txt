@@ -3,3 +3,4 @@ Flask
 groq
 requests
 yt-dlp>=2024.12.0
+pillow
