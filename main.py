@@ -63,7 +63,7 @@ def get_todays_fixtures():
         return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid"]
     except: return ["Man City vs Arsenal","Barcelona vs Real Madrid"]
 def predict_exact_score(match_str, stats=""):
-    prompt=f"Simule EA FC 26: {match_str} Stats {stats}. En français uniquement."
+    prompt=f"Simule EA FC 26 en français: {match_str} Stats {stats}. Format: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0"
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
@@ -120,7 +120,7 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX LLAMA4 FR OK"
+def home(): return "Bot COURAGEUX LLAMA32 FR OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -179,12 +179,12 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION LLAMA 4 - 100% FRANCAIS ===
+# === VISION QUI MARCHE - LLAMA 3.2 11B - 100% FR ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
-    caption=update.message.caption or "Donne les détails"
+    caption=update.message.caption or "C'est quel modèle et son processeur?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {caption}\n⏳ Analyse..."))
     try:
@@ -200,25 +200,26 @@ async def handle_photo(update:Update, context):
             b64=base64.b64encode(f.read()).decode('utf-8')
 
         completion=groq_client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="meta-llama/llama-3.2-11b-vision-preview",
             messages=[
                 {
                     "role": "system",
-                    "content": "Tu es COURAGEUX THE KING. Tu parles UNIQUEMENT en français avec un peu de lingala. Interdiction totale de parler anglais. Réponse courte, 5 lignes max."
+                    "content": "Tu es COURAGEUX THE KING, expert téléphones. Tu parles UNIQUEMENT en français avec un peu lingala. Réponse très courte, 5 lignes max. Donne marque, modèle exact, batterie et processeur."
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"Question: {caption}. Réponds en français uniquement, très court."},
+                        {"type": "text", "text": f"Question: {caption}. Réponds en français uniquement."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                     ]
                 }
             ],
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=500
         )
         rep=completion.choices[0].message.content.strip()
 
+        # Mémoire pour ne plus oublier
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
         if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
@@ -243,7 +244,7 @@ async def chat_gpt(update,context):
         comp=groq_client.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[
-                {"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + lingala. Jamais d'anglais. Tu te souviens de tout."}
+                {"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + lingala. Jamais d'anglais. Tu te souviens de tout, même des photos."}
             ]+conversations[uid][-10:],
             temperature=0.7
         )
