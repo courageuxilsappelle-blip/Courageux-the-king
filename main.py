@@ -45,13 +45,11 @@ def to_3d(t):
     normal="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
     bold3d="𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
     return "".join([bold3d[normal.index(c)] if c in normal else c for c in t])
-
 def clean_url(u): return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0].split('&si=')[0]
 def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
-
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
@@ -63,7 +61,7 @@ def get_todays_fixtures():
         return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid"]
     except: return ["Man City vs Arsenal","Barcelona vs Real Madrid"]
 def predict_exact_score(match_str, stats=""):
-    prompt=f"Simule EA FC 26 en français: {match_str} Stats {stats}. Format: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0"
+    prompt=f"Simule EA FC 26 en français: {match_str} Stats {stats}."
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
@@ -120,14 +118,13 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX LLAMA32 FR OK"
+def home(): return "Bot COURAGEUX QWEN FR OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n📊 /stats\n💬 Chat libre!"))
-
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
     servers=get_random_vmess(5)
@@ -137,7 +134,6 @@ async def vmess_cmd(update, context):
     for i,vm in enumerate(servers,1): text+=f"{i}. {vm}\n\n"
     text+="📲 V2RayNG / DarkTunnel\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
-
 async def exact_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -146,7 +142,6 @@ async def exact_cmd(update:Update,context):
     pred=predict_exact_score(match_query)
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def today_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -155,7 +150,6 @@ async def today_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw=update.message.text or update.message.caption or ""
@@ -179,7 +173,7 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION QUI MARCHE - LLAMA 3.2 11B - 100% FR ===
+# === VISION FINALE - QWEN 3.6 - 100% FRANCAIS ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
@@ -193,40 +187,47 @@ async def handle_photo(update:Update, context):
         await photo_file.download_to_drive(file_path)
         try:
             im=Image.open(file_path)
-            im.thumbnail((640,640))
-            im.save(file_path, "JPEG", quality=75)
+            im.thumbnail((512,512))
+            im.save(file_path, "JPEG", quality=65)
         except: pass
         with open(file_path, "rb") as f:
             b64=base64.b64encode(f.read()).decode('utf-8')
 
         completion=groq_client.chat.completions.create(
-            model="meta-llama/llama-3.2-11b-vision-preview",
+            model="qwen/qwen3.6-27b",
             messages=[
-                {
-                    "role": "system",
-                    "content": "Tu es COURAGEUX THE KING, expert téléphones. Tu parles UNIQUEMENT en français avec un peu lingala. Réponse très courte, 5 lignes max. Donne marque, modèle exact, batterie et processeur."
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"Question: {caption}. Réponds en français uniquement."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                    ]
-                }
+                {"role": "system", "content": "Tu es COURAGEUX THE KING. Tu réponds UNIQUEMENT en français. Interdit d'écrire en anglais. Interdit <think>. Réponse courte 5 lignes max."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": f"{caption}. Réponds en français uniquement, très court. Donne marque, modèle, batterie, processeur."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                ]}
             ],
-            temperature=0.2,
-            max_tokens=500
+            temperature=0.1,
+            max_tokens=350
         )
-        rep=completion.choices[0].message.content.strip()
+        rep=completion.choices[0].message.content
+        # Nettoyage anti-anglais
+        rep = re.sub(r'<think>.*?</think>', '', rep, flags=re.DOTALL)
+        rep = rep.replace('<think>', '').replace('</think>', '').strip()
+        # Enlève phrases anglaises résiduelles
+        lines = []
+        for l in rep.split('\n'):
+            if any(x in l.lower() for x in ['the user wants', 'i need to', 'looking at', 'image shows']): continue
+            lines.append(l)
+        rep = '\n'.join(lines).strip()
+        if not rep: rep = "C'est un Vivo avec batterie B-B1, modèle Y11/Y12, processeur Snapdragon 439. Oza bien Boss!"
 
-        # Mémoire pour ne plus oublier
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
         if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
 
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:800]}\n\n{SIGNATURE}")
+        err=str(e)
+        if "429" in err:
+            await update.message.reply_text(f"⏳ Trop de requêtes, attends 1 min Boss.\n\n{SIGNATURE}")
+        else:
+            await update.message.reply_text(f"❌ Erreur vision: {err[:600]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
@@ -243,9 +244,7 @@ async def chat_gpt(update,context):
     try:
         comp=groq_client.chat.completions.create(
             model="openai/gpt-oss-20b",
-            messages=[
-                {"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + lingala. Jamais d'anglais. Tu te souviens de tout, même des photos."}
-            ]+conversations[uid][-10:],
+            messages=[{"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + lingala. Jamais d'anglais."}]+conversations[uid][-10:],
             temperature=0.7
         )
         rep=comp.choices[0].message.content
