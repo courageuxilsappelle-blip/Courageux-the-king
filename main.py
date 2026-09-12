@@ -10,6 +10,37 @@ groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
 
+# === STATS USERS ===
+USERS_FILE = "users.txt"
+def save_user(user_id):
+    try:
+        if not os.path.exists(USERS_FILE):
+            open(USERS_FILE, "w").close()
+        with open(USERS_FILE, "r") as f:
+            ids = f.read().split()
+        if str(user_id) not in ids:
+            with open(USERS_FILE, "a") as f:
+                f.write(f"{user_id}\n")
+    except: pass
+
+def get_total_users():
+    try:
+        if not os.path.exists(USERS_FILE):
+            return 0
+        with open(USERS_FILE, "r") as f:
+            return len([l for l in f if l.strip()])
+    except: return 0
+
+async def stats_cmd(update, context):
+    total = get_total_users()
+    await update.message.reply_text(
+        f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n"
+        f"👥 Total utilisateurs: {total}\n"
+        f"💬 Conversations actives: {len(conversations)}\n"
+        f"🕒 Date: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        f"{SIGNATURE}"
+    )
+
 # === VMESS ===
 VMESS_FILE = "vmess.txt"
 def load_vmess():
@@ -105,12 +136,14 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX QWEN VISION OK"
+def home(): return "Bot COURAGEUX STATS + QWEN OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question je vois tout\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n💬 Chat libre!"))
+    save_user(update.effective_user.id)
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n📊 /stats\n💬 Chat libre!"))
 
 async def vmess_cmd(update, context):
+    save_user(update.effective_user.id)
     servers = get_random_vmess(5)
     if not servers:
         await update.message.reply_text("❌ Aucun serveur trouvé.\n\nCOURAGEUX THE KING")
@@ -122,6 +155,7 @@ async def vmess_cmd(update, context):
     await update.message.reply_text(text)
 
 async def exact_cmd(update:Update,context):
+    save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     if not context.args: await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal"));return
     match_query=" ".join(context.args)
@@ -129,6 +163,7 @@ async def exact_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
 async def today_cmd(update:Update,context):
+    save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     matchs=get_todays_fixtures()
     pred=predict_today_all(matchs)
@@ -137,6 +172,7 @@ async def today_cmd(update:Update,context):
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 async def handle_download(update,context,audio_only=False):
+    save_user(update.effective_user.id)
     raw=update.message.text or update.message.caption or ""
     url=clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http") and context.args: url=clean_url(context.args[0])
@@ -158,8 +194,9 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION FIX 2026 - QWEN ===
+# === VISION QWEN ===
 async def handle_photo(update:Update, context):
+    save_user(update.effective_user.id)
     caption = update.message.caption or ""
     question = caption if caption else "Analyse cette photo en détail, c'est quel site et à quoi ça sert?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -170,26 +207,20 @@ async def handle_photo(update:Update, context):
         await photo_file.download_to_drive(file_path)
         with open(file_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
-
         completion = groq_client.chat.completions.create(
             model="qwen/qwen3.6-27b",
-            messages=[
-                {"role":"user","content":[
-                    {"type":"text","text": question + " Réponds en français simple + un peu lingala."},
-                    {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-                ]}
-            ],
+            messages=[{"role":"user","content":[{"type":"text","text": question + " Réponds en français simple + un peu lingala."},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
             temperature=0.5,
             max_tokens=1200
         )
         rep = completion.choices[0].message.content
-        if "</think>" in rep:
-            rep = rep.split("</think>")[-1].strip()
+        if "</think>" in rep: rep = rep.split("</think>")[-1].strip()
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur vision: {str(e)[:600]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
+    save_user(update.effective_user.id)
     txt=update.message.text or update.message.caption or ""
     low=txt.lower()
     if is_link(txt): await handle_download(update,context,False);return
@@ -216,6 +247,7 @@ app.add_handler(CommandHandler("today",today_cmd))
 app.add_handler(CommandHandler("tous",today_cmd))
 app.add_handler(CommandHandler("vmess",vmess_cmd))
 app.add_handler(CommandHandler("v2ray",vmess_cmd))
+app.add_handler(CommandHandler("stats",stats_cmd))
 app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
