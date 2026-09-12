@@ -105,10 +105,10 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX FIXED 404 OK"
+def home(): return "Bot COURAGEUX QWEN VISION OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n💬 Chat libre!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Envoie PHOTO + question je vois tout\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n💬 Chat libre!"))
 
 async def vmess_cmd(update, context):
     servers = get_random_vmess(5)
@@ -158,12 +158,12 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === FIX FINAL PHOTO ===
+# === VISION FIX 2026 - QWEN ===
 async def handle_photo(update:Update, context):
     caption = update.message.caption or ""
-    question = caption if caption else "Analyse cette photo, c'est quel site et à quoi ça sert?"
+    question = caption if caption else "Analyse cette photo en détail, c'est quel site et à quoi ça sert?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {question}\n⏳ Analyse..."))
+    await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {question}\n⏳ Analyse avec Qwen..."))
     try:
         photo_file = await update.message.photo[-1].get_file()
         file_path = "/tmp/analyse.jpg"
@@ -171,38 +171,23 @@ async def handle_photo(update:Update, context):
         with open(file_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
 
-        # ESSAIE 11B D'ABORD
-        try:
-            completion = groq_client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=[
-                    {"role":"user","content":[
-                        {"type":"text","text": question},
-                        {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-                    ]}
-                ],
-                temperature=0.5,
-                max_tokens=800
-            )
-        except Exception as e1:
-            # SI 11B RATE, ESSAIE 90B
-            print(f"11b failed {e1}, trying 90b")
-            completion = groq_client.chat.completions.create(
-                model="llama-3.2-90b-vision-preview",
-                messages=[
-                    {"role":"user","content":[
-                        {"type":"text","text": question},
-                        {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-                    ]}
-                ],
-                temperature=0.5,
-                max_tokens=800
-            )
-
+        completion = groq_client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[
+                {"role":"user","content":[
+                    {"type":"text","text": question + " Réponds en français simple + un peu lingala."},
+                    {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+                ]}
+            ],
+            temperature=0.5,
+            max_tokens=1200
+        )
         rep = completion.choices[0].message.content
+        if "</think>" in rep:
+            rep = rep.split("</think>")[-1].strip()
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:500]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:600]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     txt=update.message.text or update.message.caption or ""
