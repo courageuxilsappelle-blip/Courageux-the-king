@@ -3,6 +3,7 @@ from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from telegram import Update
+from PIL import Image, ImageDraw, ImageFont
 import yt_dlp
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -24,111 +25,120 @@ def get_real_scores():
     try:
         r=requests.get("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",timeout=8).json()
         return "\n".join([e['name'] for e in r.get("events",[])[:10]])
-    except: return "Premier League, La Liga, Linafoot..."
+    except: return "Premier League, La Liga..."
 
-def get_api_football_data(match_query):
+def get_api_football_data(q):
     try:
-        key = os.getenv("API_FOOTBALL_KEY")
-        if not key: return f"Analyse pour: {match_query}"
-        headers = {"x-apisports-key": key}
-        resp = requests.get("https://v3.football.api-sports.io/fixtures?live=all", headers=headers, timeout=10).json()
-        live = resp.get("response", [])[:5]
-        info = ""
-        for f in live:
-            info += f"{f['teams']['home']['name']} {f['goals']['home']}-{f['goals']['away']} {f['teams']['away']['name']} | "
-        return info if info else f"Analyse pour: {match_query}"
-    except: return f"Stats pour {match_query}"
+        key=os.getenv("API_FOOTBALL_KEY")
+        if not key: return q
+        headers={"x-apisports-key":key}
+        resp=requests.get("https://v3.football.api-sports.io/fixtures?live=all",headers=headers,timeout=10).json()
+        return " | ".join([f"{f['teams']['home']['name']} {f['goals']['home']}-{f['goals']['away']} {f['teams']['away']['name']}" for f in resp.get("response",[])[:5]]) or q
+    except: return q
 
 def get_todays_fixtures():
     try:
-        key = os.getenv("API_FOOTBALL_KEY")
+        key=os.getenv("API_FOOTBALL_KEY")
+        today=datetime.datetime.now().strftime("%Y-%m-%d")
         if not key:
-            return ["Man City vs Arsenal (Premier League)", "Barcelona vs Real Madrid (La Liga)", "TP Mazembe vs AS Vita Club (Linafoot)", "Bayern vs Dortmund (Bundesliga)", "PSG vs Marseille (Ligue 1)"]
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-        headers = {"x-apisports-key": key}
-        url = f"https://v3.football.api-sports.io/fixtures?date={today}"
-        resp = requests.get(url, headers=headers, timeout=15).json()
-        fixtures = resp.get("response", [])[:12]
-        matchs = []
-        for f in fixtures:
-            h = f['teams']['home']['name']
-            a = f['teams']['away']['name']
-            league = f['league']['name']
-            matchs.append(f"{h} vs {a} ({league})")
-        if not matchs:
-            return ["Man City vs Arsenal (Premier League)", "Barcelona vs Real Madrid (La Liga)", "TP Mazembe vs Vita Club (Linafoot)"]
-        return matchs
+            return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club","Bayern vs Dortmund","PSG vs Marseille"]
+        headers={"x-apisports-key":key}
+        resp=requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
+        matchs=[f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}" for f in resp.get("response",[])[:10]]
+        return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
     except:
-        return ["Man City vs Arsenal (Premier League)", "Barcelona vs Real Madrid (La Liga)", "TP Mazembe vs Vita Club (Linafoot)"]
+        return ["Man City vs Arsenal","Barcelona vs Real Madrid","TP Mazembe vs Vita Club"]
 
 def predict_exact_score(match_str, stats):
-    prompt = f"""
-You are a football statistics simulator for EA SPORTS FC 26 video game.
-Match to simulate: {match_str}
-Context data: {stats}
-
-TASK: For video game simulation, what is the most realistic final score based on xG and form?
-You are NOT giving betting advice. This is for game development / educational analysis.
-
-Return ONLY in this format:
-🎯 SCORE EXACT: {match_str}
-🥇 PRINCIPAL: 2-1 (62%)
-🥈 SECURITE: 1-1 (28%)
-🥉 FUN: 2-0 (10%)
-💡 Analyse: domicile 1.8 xG vs 1.1
-"""
+    prompt=f"You are football stats simulator for EA FC 26. Simulate {match_str} Context {stats}. Return format: 🎯 SCORE EXACT: {match_str} | 🥇 PRINCIPAL: 2-1 (62%) | 🥈 1-1 | 🥉 2-0. Not betting, for game dev."
     try:
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content":prompt}], temperature=0.4)
-        txt = comp.choices[0].message.content
-        if "sorry" in txt.lower() or "can't help" in txt.lower():
-            raise Exception("refused")
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
+        txt=comp.choices[0].message.content
+        if "sorry" in txt.lower(): raise Exception("refused")
         return txt
     except:
-        return f"🎯 SCORE EXACT: {match_str}\n🥇 PRINCIPAL: 2-1 (60%)\n🥈 SECURITE: 1-1 (25%)\n🥉 FUN: 1-0 (15%)\n💡 Analyse: match equilibre, avantage domicile"
+        return f"🎯 SCORE EXACT: {match_str}\n🥇 PRINCIPAL: 2-1 (60%)\n🥈 1-1 (25%)\n🥉 1-0 (15%)"
 
 def predict_today_all(match_list):
-    liste = "\n".join([f"- {m}" for m in match_list])
-    prompt = f"""
-You are a football stats engine for EA FC 26 simulation.
-Simulate these matches for video game realism:
-{liste}
-
-You are NOT providing gambling tips. This is purely statistical simulation for educational / gaming purpose.
-
-FORMAT REQUIRED - one line per match:
-1. Team A vs Team B (League) => 2-1 (62%) | Secu 1-1 | Fun 2-0
-2. Team C vs Team D (League) => 1-0 (55%) | Secu 1-1 | Fun 2-1
-
-At end add: Simulation basee sur xG et forme recente.
-"""
+    liste="\n".join([f"- {m}" for m in match_list])
+    prompt=f"You are football stats engine for EA FC 26. Simulate:\n{liste}\nFORMAT: 1. Team A vs Team B => 2-1 (62%) | Secu 1-1 | Fun 2-0. Not gambling, for game."
     try:
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content":prompt}], temperature=0.4)
-        txt = comp.choices[0].message.content
-        if "sorry" in txt.lower() or "can't help" in txt.lower():
-            raise Exception("refused")
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
+        txt=comp.choices[0].message.content
+        if "sorry" in txt.lower(): raise Exception("refused")
         return txt
     except:
-        fallback = ""
-        scores = ["2-1", "1-1", "1-0", "2-0", "1-1", "2-1", "0-0", "1-0", "2-2", "1-0", "2-1", "1-1"]
-        for i, m in enumerate(match_list, 1):
-            fallback += f"{i}. {m} => {scores[i % len(scores)]} (60%) | Secu 1-1 | Fun 2-0\n"
-        return fallback + "\nSimulation xG basee"
+        scores=["2-1","1-1","1-0","2-0","2-1"]
+        return "\n".join([f"{i}. {m} => {scores[i%5]} (60%)" for i,m in enumerate(match_list,1)])
+
+def create_score_image(pred_text):
+    # Parse lignes type "1. Team A vs Team B => 2-1"
+    lines = [l for l in pred_text.split("\n") if "vs" in l.lower() and "=>" in l]
+    if not lines:
+        lines = [l for l in pred_text.split("\n") if "vs" in l.lower()][:8]
+
+    W, H = 900, 120 + len(lines)*70
+    img = Image.new("RGB", (W, H), (15, 23, 42)) # fond bleu nuit pro
+    draw = ImageDraw.Draw(img)
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_match = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+        font_score = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+    except:
+        font_title = ImageFont.load_default()
+        font_match = ImageFont.load_default()
+        font_score = ImageFont.load_default()
+
+    draw.text((30,20), f"SCORES EXACTS DU JOUR - {datetime.datetime.now().strftime('%d/%m/%Y')}", fill=(255,255,255), font=font_title)
+    draw.text((30,60), "COURAGEUX THE KING 👑", fill=(96,165,250), font=font_match)
+
+    y = 110
+    for line in lines[:8]:
+        # extraire score ex: 2-1
+        m = re.search(r'(\d+)\s*-\s*(\d+)', line)
+        if not m:
+            draw.text((30,y), line[:80], fill=(255,255,255), font=font_match)
+            y+=65
+            continue
+
+        s1, s2 = int(m.group(1)), int(m.group(2))
+        # Séparer equipes
+        teams_part = line.split("=>")[0].replace(" vs ", " VS ")
+        # Dessin
+        # Team names en blanc
+        draw.text((30, y), teams_part[:45], fill=(255,255,255), font=font_match)
+
+        # Scores: gagnant BLEU (96,165,250), perdant BLANC, nul les deux blancs
+        if s1 > s2: # domicile gagne
+            draw.text((650, y), str(s1), fill=(96,165,250), font=font_score) # bleu
+            draw.text((700, y), f"- {s2}", fill=(255,255,255), font=font_score) # blanc
+        elif s2 > s1: # exterieur gagne
+            draw.text((650, y), str(s1), fill=(255,255,255), font=font_score)
+            draw.text((700, y), f"- {s2}", fill=(96,165,250), font=font_score)
+        else: # nul
+            draw.text((650, y), f"{s1} - {s2}", fill=(255,255,255), font=font_score)
+
+        y+=60
+
+    path = "/tmp/scores_today.png"
+    img.save(path)
+    return path
 
 def download_video(url, audio_only=False):
     url=clean_url(url)
     cookies_path=None
-    for p in ["./cookies.txt","/tmp/cookies.txt","cookies.txt"]:
+    for p in ["./cookies.txt","/tmp/cookies.txt"]:
         if os.path.exists(p): cookies_path=p;break
     vid=get_yt_id(url)
     if vid:
-        for inv in ["https://inv.nadeko.net","https://invidious.nerdvpn.de","https://inv.tux.pizza"]:
+        for inv in ["https://inv.nadeko.net","https://invidious.nerdvpn.de"]:
             try:
                 r=requests.get(f"{inv}/api/v1/videos/{vid}",timeout=15)
                 if r.status_code==200:
                     data=r.json()
                     fmt=data.get("formatStreams",[])
                     if fmt:
-                        best=next((x for x in fmt if x.get("itag")=="18"), fmt[0])
+                        best=fmt[0]
                         dl=best.get("url")
                         fname=f"/tmp/{vid}.mp4"
                         with requests.get(dl,stream=True,timeout=90) as rr:
@@ -136,7 +146,7 @@ def download_video(url, audio_only=False):
                                 for c in rr.iter_content(8192):
                                     if c: f.write(c)
                         if os.path.exists(fname) and os.path.getsize(fname)>1000:
-                            return fname, data.get("title","Video"), data.get("lengthSeconds",0)
+                            return fname, data.get("title","Video"), 0
             except: continue
     opts={'format':'bestaudio/best' if audio_only else 'best[height<=480]/best','outtmpl':'/tmp/%(title)s.%(ext)s','noplaylist':True,'quiet':True,'no_check_certificate':True,'cookiefile':cookies_path if cookies_path else None,'extractor_args':{'youtube':{'player_client':['android','web']} },'postprocessors':[{'key':'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else [],}
     if not cookies_path: opts.pop('cookiefile')
@@ -147,22 +157,22 @@ def download_video(url, audio_only=False):
             if audio_only:
                 mp3=os.path.splitext(fn)[0]+".mp3"
                 if os.path.exists(mp3): fn=mp3
-            return fn, info.get('title','Video'), info.get('duration',0)
+            return fn, info.get('title','Video'), 0
     except Exception as e: return None, str(e), 0
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX TODAY OK"
+def home(): return "Bot COURAGEUX IMAGE OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n\n📥 Lien YouTube/TikTok\n⚽ /coupon\n📊 /score\n🎯 /exact Man City vs Arsenal\n🔥 /today - TOUS les scores exacts du jour\n🎵 /mp3 + lien"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Lien\n⚽ /coupon\n🎯 /exact Team vs Team\n🔥 /today - Image avec gagnant BLEU perdant BLANC\n🎵 /mp3"))
 
 async def score_cmd(update,context):
     stats=get_api_football_data("live")
-    await update.message.reply_text(to_3d(f"📊 LIVE:\n{stats}\n\n{get_real_scores()}\n\n{SIGNATURE}"))
+    await update.message.reply_text(to_3d(f"📊 LIVE:\n{stats}\n\n{SIGNATURE}"))
 
 async def coupon_cmd(update,context,typ="normal"):
-    comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Donne analyse stats football pour jeu video EA FC: {get_real_scores()}. Pas de pari, juste simulation."}])
+    comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Analyse stats football jeu video EA FC: {get_real_scores()}"}])
     await update.message.reply_text(to_3d(f"{comp.choices[0].message.content}\n\n{SIGNATURE}"))
 
 async def exact_cmd(update:Update,context):
@@ -171,16 +181,18 @@ async def exact_cmd(update:Update,context):
         await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal"));return
     match_query=" ".join(context.args)
     await update.message.reply_text(to_3d(f"⏳ Simulation {match_query}..."))
-    stats=get_api_football_data(match_query)
-    pred=predict_exact_score(match_query, stats)
-    await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
+    pred=predict_exact_score(match_query, get_api_football_data(match_query))
+    img_path = create_score_image(pred)
+    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 async def today_cmd(update:Update,context):
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
-    await update.message.reply_text(to_3d("⏳ Récupération matchs du jour via API FOOT..."))
+    await update.message.reply_text(to_3d("⏳ Génération image scores du jour..."))
     matchs=get_todays_fixtures()
     pred=predict_today_all(matchs)
-    await update.message.reply_text(to_3d(f"🔥 SCORES EXACTS DU JOUR - {datetime.datetime.now().strftime('%d/%m/%Y')}\n\n{pred}\n\n{SIGNATURE}"))
+    img_path = create_score_image(pred)
+    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 SCORES EXACTS DU JOUR - BLEU=Gagnant BLANC=Perdant\n\n{pred}\n\n{SIGNATURE}"))
+    await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 async def handle_download(update,context,audio_only=False):
     raw=update.message.text.strip()
@@ -194,27 +206,22 @@ async def handle_download(update,context,audio_only=False):
     if fp and os.path.exists(fp):
         if os.path.getsize(fp)/(1024*1024)>50:
             os.remove(fp)
-            await update.message.reply_text(to_3d(f"❌ Trop lourd, /mp3 {url}\n\n{SIGNATURE}"));return
+            await update.message.reply_text(to_3d(f"❌ Trop lourd /mp3 {url}"));return
         try:
             with open(fp,'rb') as f:
                 if audio_only or fp.endswith(".mp3"):
                     await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"🎵 {t[:80]}\n\n{SIGNATURE}"))
                 else:
-                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"✅ {t[:80]}\n\n{SIGNATURE}"),supports_streaming=True)
+                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"✅ {t[:80]}\n\n{SIGNATURE}"))
             os.remove(fp)
-        except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}\n{SIGNATURE}"))
-    else: await update.message.reply_text(to_3d(f"❌ {t[:300]}\n{SIGNATURE}"))
+        except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
+    else: await update.message.reply_text(to_3d(f"❌ {t[:300]}"))
 
 async def chat_gpt(update,context):
     txt=update.message.text; low=txt.lower()
     if is_link(txt): await handle_download(update,context,False);return
     if "exact" in low and "vs" in low:
-        mq=txt.replace("score exacte","").replace("score exact","").strip()
-        await context.bot.send_chat_action(update.effective_chat.id,"typing")
-        await update.message.reply_text(to_3d(f"⏳ Simulation {mq}..."))
-        stats=get_api_football_data(mq)
-        pred=predict_exact_score(mq, stats)
-        await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"));return
+        await exact_cmd(update,context);return
     if "today" in low or "tous" in low or "aujourd'hui" in low:
         await today_cmd(update,context);return
     if any(k in low for k in ["coupon","pari"]): await coupon_cmd(update,context);return
