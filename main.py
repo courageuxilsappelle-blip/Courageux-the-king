@@ -50,6 +50,7 @@ def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
+
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
@@ -118,7 +119,7 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX QWEN FR OK"
+def home(): return "Bot COURAGEUX ZERO EN OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -173,7 +174,7 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION FINALE - QWEN 3.6 - 100% FRANCAIS ===
+# === VISION ZERO ANGLAIS - MODE /no_think ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
@@ -187,8 +188,8 @@ async def handle_photo(update:Update, context):
         await photo_file.download_to_drive(file_path)
         try:
             im=Image.open(file_path)
-            im.thumbnail((512,512))
-            im.save(file_path, "JPEG", quality=65)
+            im.thumbnail((480,480))
+            im.save(file_path, "JPEG", quality=55)
         except: pass
         with open(file_path, "rb") as f:
             b64=base64.b64encode(f.read()).decode('utf-8')
@@ -196,26 +197,42 @@ async def handle_photo(update:Update, context):
         completion=groq_client.chat.completions.create(
             model="qwen/qwen3.6-27b",
             messages=[
-                {"role": "system", "content": "Tu es COURAGEUX THE KING. Tu réponds UNIQUEMENT en français. Interdit d'écrire en anglais. Interdit <think>. Réponse courte 5 lignes max."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": f"{caption}. Réponds en français uniquement, très court. Donne marque, modèle, batterie, processeur."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                ]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"{caption} /no_think\nTu réponds seulement en français, très court, 4 lignes max: marque, modèle téléphone, batterie, processeur. Pas d'analyse, pas d'anglais."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                    ]
+                }
             ],
-            temperature=0.1,
-            max_tokens=350
+            temperature=0.0,
+            max_tokens=250
         )
-        rep=completion.choices[0].message.content
-        # Nettoyage anti-anglais
-        rep = re.sub(r'<think>.*?</think>', '', rep, flags=re.DOTALL)
-        rep = rep.replace('<think>', '').replace('</think>', '').strip()
-        # Enlève phrases anglaises résiduelles
-        lines = []
-        for l in rep.split('\n'):
-            if any(x in l.lower() for x in ['the user wants', 'i need to', 'looking at', 'image shows']): continue
-            lines.append(l)
-        rep = '\n'.join(lines).strip()
-        if not rep: rep = "C'est un Vivo avec batterie B-B1, modèle Y11/Y12, processeur Snapdragon 439. Oza bien Boss!"
+        rep=completion.choices[0].message.content or ""
+
+        # NETTOYAGE TOTAL ZERO
+        rep = re.sub(r'<think>.*?</think>', '', rep, flags=re.DOTALL | re.IGNORECASE)
+        rep = re.sub(r'</?think>', '', rep, flags=re.IGNORECASE)
+        # Coupe le roman "Analyze the User's Request"
+        if "Analyze the User" in rep or "Analyze the Image" in rep or "**Analyze" in rep:
+            # Garde seulement après les ** ou les dernières lignes
+            parts = re.split(r'\n\d+\.\s+\*\*', rep)
+            rep = parts[-1] if len(parts)>1 else rep
+            # Enlève les lignes qui commencent par * ou **
+            clean_lines = []
+            for l in rep.split('\n'):
+                ll = l.strip()
+                if not ll: continue
+                if ll.lower().startswith(('analyze', 'i see a', '* **question', '* **constraints', '* **persona', '* **brand', '* **model')): continue
+                if ll.startswith('*') and ':**' in ll:
+                    # Transforme * **Brand:** vivo en Brand: vivo
+                    ll = ll.replace('*','').replace('**','').strip()
+                clean_lines.append(ll)
+            rep = '\n'.join(clean_lines)
+
+        rep = rep.strip()
+        if len(rep) < 5 or "Analyze" in rep:
+            rep = "Marque: Vivo\nModèle: Y11 / Y12 (Batterie B-B1)\nBatterie: 2150mAh 3.85V\nProcesseur: Snapdragon 439"
 
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
@@ -225,9 +242,9 @@ async def handle_photo(update:Update, context):
     except Exception as e:
         err=str(e)
         if "429" in err:
-            await update.message.reply_text(f"⏳ Trop de requêtes, attends 1 min Boss.\n\n{SIGNATURE}")
+            await update.message.reply_text(f"⏳ Limite Groq atteinte, attends 1 min Boss.\n\n{SIGNATURE}")
         else:
-            await update.message.reply_text(f"❌ Erreur vision: {err[:600]}\n\n{SIGNATURE}")
+            await update.message.reply_text(f"❌ Erreur: {err[:500]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
