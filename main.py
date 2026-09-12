@@ -23,7 +23,6 @@ def load_vmess():
         return []
     except:
         return []
-
 def get_random_vmess(n=5):
     all_servers = load_vmess()
     if not all_servers:
@@ -138,21 +137,23 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX VMESS OK"
+def home(): return "Bot COURAGEUX VMESS FIXED OK"
 
 async def start(update,context):
     await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🎵 /mp3 + lien\n🔐 /vmess - Serveurs V2Ray\n💬 Pose moi n'importe quelle question!"))
 
+# === FIX VMESS SANS 3D ===
 async def vmess_cmd(update, context):
     servers = get_random_vmess(5)
     if not servers:
-        await update.message.reply_text(to_3d(f"❌ Aucun serveur trouvé. Vérifie vmess.txt\n\n{SIGNATURE}"))
+        await update.message.reply_text("❌ Aucun serveur trouvé. Vérifie vmess.txt\n\nCOURAGEUX THE KING")
         return
-    text = "🔐 SERVEURS VMESS ACTIFS\n\n"
+    text = "🔐 SERVEURS VMESS ACTIFS - COURAGEUX THE KING\n\n"
     for i, vm in enumerate(servers, 1):
-        text += f"{i}. `{vm}`\n\n"
-    text += f"📲 Importe dans V2RayNG / NapsternetV\n\n{SIGNATURE}"
-    await update.message.reply_text(to_3d(text), parse_mode="Markdown")
+        text += f"{i}. {vm}\n\n"
+    text += "📲 Copie colle direct dans V2RayNG / NapsternetV / DarkTunnel\n"
+    text += "✅ Lien brut importable\n\nCOURAGEUX THE KING"
+    await update.message.reply_text(text)
 
 async def score_cmd(update,context):
     stats=get_api_football_data("live")
