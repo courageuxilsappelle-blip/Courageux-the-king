@@ -23,8 +23,8 @@ def get_total_users():
         if not os.path.exists(USERS_FILE): return 0
         with open(USERS_FILE,"r") as f: return len([l for l in f if l.strip()])
     except: return 0
-
 async def stats_cmd(update, context):
+    save_user(update.effective_user.id)
     total = get_total_users()
     await update.message.reply_text(f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n👥 Total utilisateurs: {total}\n💬 Chats actifs: {len(conversations)}\n🕒 {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n{SIGNATURE}")
 
@@ -53,6 +53,7 @@ def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
+
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
@@ -121,10 +122,12 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX FINAL 400 TOKENS OK"
+def home(): return "Bot COURAGEUX MEMOIRE FIX OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
+    uid=update.effective_user.id
+    if uid not in conversations: conversations[uid]=[]
     await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n📊 /stats\n💬 Chat libre!"))
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
@@ -174,17 +177,18 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION FIX 429 - QWEN 400 TOKENS + COMPRESS ===
+# === VISION + MEMOIRE FIX ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
-    caption=update.message.caption or "Tu connais ce site?"
+    uid=update.effective_user.id
+    if uid not in conversations: conversations[uid]=[]
+    caption=update.message.caption or "Ce quoi la marque exacte"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {caption}\n⏳ Analyse..."))
     try:
         photo_file=await update.message.photo[-1].get_file()
         file_path="/tmp/analyse.jpg"
         await photo_file.download_to_drive(file_path)
-        # compresse pour éviter 429 input
         try:
             im=Image.open(file_path)
             im.thumbnail((512,512))
@@ -203,24 +207,30 @@ async def handle_photo(update:Update, context):
         )
         rep=completion.choices[0].message.content
         if "</think>" in rep: rep=rep.split("</think>")[-1].strip()
+
+        # SAUVEGARDE MEMOIRE PHOTO - C'EST CA QUI MANQUAIT!
+        conversations[uid].append({"role":"user","content": f"[PHOTO ANALYSE: {caption}]"})
+        conversations[uid].append({"role":"assistant","content": rep})
+        if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
+
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur: {str(e)[:600]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
+    uid=update.effective_user.id
     txt=update.message.text or update.message.caption or ""
     low=txt.lower()
     if is_link(txt): await handle_download(update,context,False); return
     if "exact" in low and "vs" in low: await exact_cmd(update,context); return
     if "today" in low or "tous" in low or "aujourd'hui" in low: await today_cmd(update,context); return
     if "vmess" in low or "v2ray" in low: await vmess_cmd(update,context); return
-    uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     try:
-        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, français + lingala."}]+conversations[uid][-10:],temperature=0.7)
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, français + lingala. Tu te souviens de la conversation précédente, même des photos analysées."}]+conversations[uid][-10:],temperature=0.7)
         rep=comp.choices[0].message.content
     except: rep="Yo Boss! Je suis là!"
     conversations[uid].append({"role":"assistant","content":rep})
