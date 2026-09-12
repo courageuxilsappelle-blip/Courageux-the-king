@@ -53,7 +53,6 @@ def get_yt_id(u):
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
 
-# === TRACE + SCAN 200 OK RÉEL ===
 def get_host_info(host):
     info = {}
     try:
@@ -87,13 +86,11 @@ def check_port_200(host, ip, port):
         result["open"] = True
     except:
         return result
-
     try:
         if port in [443, 8443, 2096, 2053, 2083]:
             urls = [f"https://{host}:{port}", f"https://{ip}:{port}"]
         else:
             urls = [f"http://{host}:{port}", f"http://{ip}:{port}"]
-
         for u in urls:
             try:
                 r = requests.get(u, timeout=4, verify=False, headers={"User-Agent":"Mozilla/5.0"})
@@ -117,10 +114,8 @@ def check_port_200(host, ip, port):
                 break
             except:
                 continue
-
         if result["code"] == 0 and result["open"]:
             result["status"] = "🟢 OUVERT (pas HTTP) - TCP/VMess"
-
     except Exception as e:
         result["status"] = f"🟢 OUVERT ({e})"
     return result
@@ -135,31 +130,20 @@ async def scan_cmd(update, context):
     ports = [80, 443, 8080, 1080, 3128, 8000, 8888, 10808, 2080, 2053, 8443, 2096]
     if len(context.args) > 1 and context.args[1].isdigit():
         ports = [int(context.args[1])]
-
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     await update.message.reply_text(f"🔍 Traçage de {host}...")
-
     import asyncio
     loop = asyncio.get_event_loop()
     host_info = await loop.run_in_executor(None, get_host_info, host)
     if "error" in host_info:
-        await update.message.reply_text(f"❌ Host introuvable: {host}")
-        return
-
+        await update.message.reply_text(f"❌ Host introuvable: {host}"); return
     ip = host_info.get("ip", host)
     results = []
     for p in ports:
         r = await loop.run_in_executor(None, check_port_200, host, ip, p)
         results.append(r)
-
     text = f"🌍 TRACE: {host_raw}\n━━━━━━━━━━━━━━\n"
-    text += f"📍 IP: {ip}\n"
-    text += f"🔙 {host_info.get('reverse','?')[:45]}\n"
-    text += f"🌐 {host_info.get('country','?')}\n"
-    text += f"🏢 {host_info.get('isp','?')}\n"
-    text += f"🏭 {host_info.get('org','?')[:35]}\n"
-    text += f"━━━━━━━━━━━━━━\n🔍 TEST 200 OK:\n"
-
+    text += f"📍 IP: {ip}\n🔙 {host_info.get('reverse','?')[:45]}\n🌐 {host_info.get('country','?')}\n🏢 {host_info.get('isp','?')}\n🏭 {host_info.get('org','?')[:35]}\n━━━━━━━━━━━━━━\n🔍 TEST 200 OK:\n"
     count_200 = 0
     for r in results:
         if r["is_200"]:
@@ -170,12 +154,10 @@ async def scan_cmd(update, context):
                 text += f"🟡 {r['port']}: {r['status']}\n"
             else:
                 text += f"❌ {r['port']}: FERMÉ\n"
-
     if count_200 > 0:
         text += f"\n🎯 {count_200} HOST(S) 200 OK!\n"
     else:
         text += f"\n❌ Aucun 200 OK pur\n"
-
     text += f"\n{SIGNATURE}"
     if len(text)>4000: text=text[:4000]
     await update.message.reply_text(text)
@@ -214,16 +196,13 @@ async def mtr_cmd(update, context):
         return
     raw = " ".join(context.args)
     ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
-    ips = list(dict.fromkeys(ips)) # unique
-
+    ips = list(dict.fromkeys(ips))
     if not ips:
         await update.message.reply_text(f"❌ Aucune IP trouvée\n\n{SIGNATURE}"); return
-
     import asyncio
     loop = asyncio.get_event_loop()
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     await update.message.reply_text(f"🔍 Scan 200 OK de {len(ips)} HOSTS MTR...")
-
     results_text = f"🌍 SCAN MTR {len(ips)} HOSTS\n━━━━━━━━━━━━━━\n"
     found_200 = []
     for ip in ips[:20]:
@@ -238,18 +217,15 @@ async def mtr_cmd(update, context):
                 results_text += f"🟡 {ip}: Ouvert mais pas 200\n"
             else:
                 results_text += f"❌ {ip}: Fermé\n"
-
     if found_200:
         results_text += f"\n🎯 {len(found_200)} AVEC 200 OK:\n"
         for ip in found_200:
             results_text += f"👉 {ip}:80 / :443\n"
     else:
         results_text += f"\n❌ Aucun 200 OK dans MTR (normal, ce sont des routeurs)\n💡 Teste la destination finale: ncmrsb-ai-in-f14.1e100.net\n"
-
     results_text += f"\n{SIGNATURE}"
     await update.message.reply_text(results_text)
 
-# === FOOT + DOWNLOAD + VISION ===
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
@@ -315,11 +291,22 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX V14 MTR+200 OK"
+def home(): return "Bot COURAGEUX V15 MTR IN START"
 async def start(update,context):
     save_user(update.effective_user.id)
     if update.effective_user.id not in conversations: conversations[update.effective_user.id]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n📊 /stats"))
+    await update.message.reply_text(to_3d(
+        f"Je suis {SIGNATURE} 👑\n"
+        f"📸 Photo + question\n"
+        f"📥 Lien YouTube\n"
+        f"🎯 /exact Team vs Team\n"
+        f"🔥 /today\n"
+        f"🔐 /vmess\n"
+        f"🔍 /scan host\n"
+        f"🎯 /scan200 host (que 200 OK)\n"
+        f"📡 /mtr ip1 ip2 ip3 (scan MTR)\n"
+        f"📊 /stats"
+    ))
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
     servers=get_random_vmess(5)
@@ -419,4 +406,5 @@ app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
 app.add_handler(CommandHandler("start",start))
 app.add_handler(CommandHandler("exact",exact_cmd))
 app.add_handler(CommandHandler("today",today_cmd))
-app.add_handler(Command
+app.add_handler(CommandHandler("tous",today_cmd))
+app
