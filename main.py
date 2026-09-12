@@ -51,7 +51,36 @@ def get_yt_id(u):
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
 
-# === NOUVEAU: SCAN PORTS & PROTOCOLE ===
+# === TRACE HOST + SCAN ===
+def get_host_info(host):
+    info = {}
+    try:
+        # IP
+        ip = socket.gethostbyname(host)
+        info["ip"] = ip
+        # Reverse DNS
+        try:
+            info["reverse"] = socket.gethostbyaddr(ip)[0]
+        except:
+            info["reverse"] = "Pas de PTR"
+        # GeoIP via ip-api.com (gratuit, pas de clé)
+        try:
+            r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as,timezone,lat,lon", timeout=5).json()
+            if r.get("status") == "success":
+                info.update({
+                    "country": f"{r.get('country')} - {r.get('city')} ({r.get('regionName')})",
+                    "isp": r.get("isp"),
+                    "org": r.get("org"),
+                    "as": r.get("as"),
+                    "timezone": r.get("timezone"),
+                    "coords": f"{r.get('lat')},{r.get('lon')}"
+                })
+        except:
+            pass
+    except Exception as e:
+        info["error"] = str(e)
+    return info
+
 def check_proxy(host, port, timeout=3):
     result = {"port": port, "open": False, "proto": "fermé"}
     try:
@@ -65,13 +94,13 @@ def check_proxy(host, port, timeout=3):
                 s.send(b"GET / HTTP/1.0\r\nHost: "+host.encode()+b"\r\n\r\n")
                 banner = s.recv(1024).decode(errors="ignore").lower()
                 if "http" in banner or "squid" in banner or "proxy" in banner or "200" in banner:
-                    result["proto"] = "HTTP / HTTPS Proxy"
+                    result["proto"] = "HTTP/HTTPS Proxy"
                 elif "socks" in banner:
                     result["proto"] = "SOCKS"
                 else:
-                    result["proto"] = "Ouvert (VMess/VLESS/Shadow possible)"
+                    result["proto"] = "Ouvert (VMess/VLESS/SS possible)"
             except:
-                result["proto"] = "Ouvert (pas de bannière HTTP)"
+                result["proto"] = "Ouvert (pas de bannière)"
         s.close()
     except Exception as e:
         result["proto"] = f"Erreur {e}"
@@ -81,45 +110,68 @@ async def scan_cmd(update, context):
     save_user(update.effective_user.id)
     if not context.args:
         await update.message.reply_text(
-            "🔍 SCAN PROXY - COURAGEUX THE KING\n\n"
+            "🔍 SCAN & TRACE HOST - COURAGEUX THE KING\n\n"
             "Usage:\n"
-            "/scan 1.2.3.4 8080 -> scan 1 port\n"
-            "/scan 1.2.3.4 -> scan ports proxy classiques\n"
-            "/scan proxy.example.com 443\n\n"
-            "⚠️ Scanne seulement tes propres serveurs!\n\n"
+            "/scan 1.2.3.4 -> trace + scan ports\n"
+            "/scan 1.2.3.4 8080 -> trace + scan 1 port\n"
+            "/scan google.com -> trace domaine\n\n"
+            "⚠️ Utilise seulement tes propres serveurs!\n\n"
             f"{SIGNATURE}"
         )
         return
-    host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
+    host_raw = context.args[0].replace("http://","").replace("https://","").split("/")[0]
+    host = host_raw.split(":")[0]
+    ports = [80, 443, 8080, 1080, 3128, 8000, 8888, 10808, 2080, 2053, 8443, 2096]
     if len(context.args) > 1:
-        ports = [int(context.args[1])]
-    else:
-        ports = [80, 443, 8080, 1080, 3128, 8000, 8888, 10808, 2080, 2053]
+        try:
+            ports = [int(context.args[1])]
+        except:
+            pass
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"🔍 Scan de {host} en cours...")
+    await update.message.reply_text(f"🔍 Traçage de {host} en cours...")
 
     import asyncio
     loop = asyncio.get_event_loop()
+    host_info = await loop.run_in_executor(None, get_host_info, host)
+
+    if "error" in host_info:
+        await update.message.reply_text(f"❌ Host introuvable: {host}\n{host_info['error']}")
+        return
+
+    # Scan ports
     results = []
     for p in ports:
-        r = await loop.run_in_executor(None, check_proxy, host, p)
+        r = await loop.run_in_executor(None, check_proxy, host_info.get("ip", host), p)
         results.append(r)
 
-    text = f"🔍 RESULTAT SCAN: {host}\n\n"
+    # Construction message
+    text = f"🌍 TRACE HOST: {host_raw}\n"
+    text += f"━━━━━━━━━━━━━━━━\n"
+    text += f"📍 IP: {host_info.get('ip','?')}\n"
+    text += f"🔙 Reverse: {host_info.get('reverse','?')}\n"
+    text += f"🌐 Pays: {host_info.get('country','?')}\n"
+    text += f"🏢 ISP: {host_info.get('isp','?')}\n"
+    text += f"🏭 Org: {host_info.get('org','?')}\n"
+    text += f"📡 ASN: {host_info.get('as','?')}\n"
+    text += f"🕒 Timezone: {host_info.get('timezone','?')}\n"
+    text += f"📌 Coords: {host_info.get('coords','?')}\n"
+    text += f"━━━━━━━━━━━━━━━━\n"
+    text += f"🔍 PORTS:\n"
     for r in results:
-        icon = "✅ OUVERT" if r["open"] else "❌ Fermé"
-        text += f"{icon} Port {r['port']}: {r['proto']}\n"
+        icon = "✅" if r["open"] else "❌"
+        text += f"{icon} {r['port']}: {r['proto']}\n"
 
-    # Conseil
     open_ports = [r for r in results if r["open"]]
     if open_ports:
-        text += f"\n💡 {len(open_ports)} port(s) ouvert(s) détecté(s).\n"
-        text += "Si c'est ton proxy, tu peux l'utiliser en HTTP/SOCKS.\n"
+        text += f"\n💡 {len(open_ports)} port(s) ouvert(s) -> Possible proxy/hosting\n"
     else:
-        text += "\n❌ Aucun port proxy classique ouvert."
+        text += f"\n❌ Aucun port proxy ouvert détecté"
 
     text += f"\n\n{SIGNATURE}"
+    # Telegram limite 4096 car, on coupe si trop long
+    if len(text) > 4000:
+        text = text[:4000] + f"\n\n{SIGNATURE}"
     await update.message.reply_text(text)
 
 def get_todays_fixtures():
@@ -190,14 +242,13 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX SCAN + VISION OK"
+def home(): return "Bot COURAGEUX TRACE OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host port\n📊 /stats\n💬 Chat libre!"))
-
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host\n📊 /stats\n💬 Chat libre!"))
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
     servers=get_random_vmess(5)
@@ -207,7 +258,6 @@ async def vmess_cmd(update, context):
     for i,vm in enumerate(servers,1): text+=f"{i}. {vm}\n\n"
     text+="📲 V2RayNG / DarkTunnel\n\nCOURAGEUX THE KING"
     await update.message.reply_text(text)
-
 async def exact_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -216,7 +266,6 @@ async def exact_cmd(update:Update,context):
     pred=predict_exact_score(match_query)
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def today_cmd(update:Update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -225,7 +274,6 @@ async def today_cmd(update:Update,context):
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw=update.message.text or update.message.caption or ""
@@ -249,7 +297,7 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION ZERO ANGLAIS /no_think ===
+# === VISION ZERO ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
@@ -273,7 +321,7 @@ async def handle_photo(update:Update, context):
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"{caption} /no_think\nRéponds seulement en français, très court, 4 lignes max: marque, modèle téléphone, batterie, processeur. Pas d'analyse."},
+                    {"type": "text", "text": f"{caption} /no_think\nRéponds seulement en français, très court, 4 lignes max: marque, modèle, batterie, processeur."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
             }],
@@ -287,18 +335,15 @@ async def handle_photo(update:Update, context):
             lines=[l for l in rep.split('\n') if l.strip() and not l.strip().lower().startswith('analyze') and not l.strip().startswith('* **')]
             rep='\n'.join([l.replace('*','').replace('**','').strip() for l in lines[-5:]])
         rep=rep.strip()
-        if len(rep)<5:
-            rep="Marque: Vivo\nModèle: Y11 / Y12 (Batterie B-B1)\nBatterie: 2150mAh\nProcesseur: Snapdragon 439"
+        if len(rep)<5: rep="Marque: Vivo\nModèle: Y11 / Y12 (Batterie B-B1)\nBatterie: 2150mAh\nProcesseur: Snapdragon 439"
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
         if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
         err=str(e)
-        if "429" in err:
-            await update.message.reply_text(f"⏳ Limite Groq, attends 1 min Boss.\n\n{SIGNATURE}")
-        else:
-            await update.message.reply_text(f"❌ Erreur: {err[:500]}\n\n{SIGNATURE}")
+        if "429" in err: await update.message.reply_text(f"⏳ Limite Groq, attends 1 min Boss.\n\n{SIGNATURE}")
+        else: await update.message.reply_text(f"❌ Erreur: {err[:500]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
@@ -334,6 +379,7 @@ app.add_handler(CommandHandler("vmess",vmess_cmd))
 app.add_handler(CommandHandler("v2ray",vmess_cmd))
 app.add_handler(CommandHandler("stats",stats_cmd))
 app.add_handler(CommandHandler("scan",scan_cmd))
+app.add_handler(CommandHandler("trace",scan_cmd))
 app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
