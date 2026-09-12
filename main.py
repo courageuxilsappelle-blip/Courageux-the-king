@@ -1,4 +1,4 @@
-import os, threading, requests, re
+import os, threading, requests
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -19,6 +19,12 @@ def to_3d(text):
             except: res += c
         else: res += c
     return res
+
+def clean_url(url):
+    url = url.strip()
+    url = url.split('?is=')[0].split('&is=')[0]
+    url = url.split('?si=')[0].split('&si=')[0]
+    return url
 
 def is_link(text):
     return any(x in text.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
@@ -44,11 +50,20 @@ def get_real_scores():
         return "Matchs du jour: Man City vs Arsenal, Barca vs Real, Bayern vs Dortmund"
 
 def download_video(url, audio_only=False):
+    url = clean_url(url)
     opts = {
-        'format': 'bestaudio/best' if audio_only else 'best[height<=480]/best',
+        'format': 'bestaudio/best' if audio_only else 'best[height<=480][ext=mp4]/best[height<=480]/best',
         'outtmpl': '/tmp/%(title)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
+        'no_warnings': True,
+        'no_check_certificate': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'player_skip': ['webpage'],
+            }
+        },
         'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else [],
     }
     try:
@@ -56,14 +71,26 @@ def download_video(url, audio_only=False):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             if audio_only:
-                filename = os.path.splitext(filename)[0]+".mp3"
+                mp3 = os.path.splitext(filename)[0] + ".mp3"
+                if os.path.exists(mp3):
+                    filename = mp3
             return filename, info.get('title','Video'), info.get('duration',0)
     except Exception as e:
-        return None, str(e), 0
+        print(f"Erreur 1: {e}")
+        try:
+            opts['extractor_args']['youtube']['player_client'] = ['ios', 'android']
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                if audio_only:
+                    filename = os.path.splitext(filename)[0] + ".mp3"
+                return filename, info.get('title','Video'), info.get('duration',0)
+        except Exception as e2:
+            return None, str(e2), 0
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COMPLET OK"
+def home(): return "Bot COMPLET FIX YOUTUBE OK"
 
 async def start(update: Update, context):
     conversations[update.effective_user.id] = []
@@ -91,18 +118,17 @@ async def coupon_cmd(update: Update, context, typ="normal"):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 async def handle_download(update: Update, context, audio_only=False):
-    url = update.message.text.strip()
-    if audio_only:
-        url = url.replace("/mp3","").strip()
+    raw = update.message.text.strip()
+    url = clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http"):
-        # Si /mp3 sans lien, prend args
-        if context.args: url = context.args[0]
+        if context.args:
+            url = clean_url(context.args[0])
         else:
             await update.message.reply_text(to_3d("Envoie: /mp3 + lien YouTube\nEx: /mp3 https://youtu.be/xxx"))
             return
 
     await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-    await update.message.reply_text(to_3d("⏳ Téléchargement..."))
+    await update.message.reply_text(to_3d("⏳ Téléchargement... je contourne le blocage YouTube"))
 
     import asyncio
     loop = asyncio.get_event_loop()
@@ -125,7 +151,7 @@ async def handle_download(update: Update, context, audio_only=False):
             await update.message.reply_text(to_3d(f"❌ Erreur: {e}\n{SIGNATURE}"))
             if os.path.exists(filepath): os.remove(filepath)
     else:
-        await update.message.reply_text(to_3d(f"❌ Lien invalide ou privé\n\n{SIGNATURE}"))
+        await update.message.reply_text(to_3d(f"❌ Lien invalide ou privé\nErreur: {title}\n\n{SIGNATURE}"))
 
 async def chat_gpt(update: Update, context):
     text = update.message.text
@@ -139,12 +165,11 @@ async def chat_gpt(update: Update, context):
         await score_cmd(update, context)
         return
 
-    # IA CHAT normal (gardé)
     uid = update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":text})
     if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
-    sys_msg = {"role":"system","content":f"Tu t'appelles {SIGNATURE}, expert foot et IA sympa. Tu donnes scores exacts et coupons si demandé. Ne mets jamais ta signature, le code le fait."}
+    sys_msg = {"role":"system","content":f"Tu t'appelles {SIGNATURE}, expert foot et IA sympa."}
     try:
         comp = groq_client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[sys_msg]+conversations[uid])
         rep = comp.choices[0].message.content
