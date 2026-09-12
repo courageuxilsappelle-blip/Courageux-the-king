@@ -63,14 +63,14 @@ def get_todays_fixtures():
         return matchs if matchs else ["Man City vs Arsenal","Barcelona vs Real Madrid"]
     except: return ["Man City vs Arsenal","Barcelona vs Real Madrid"]
 def predict_exact_score(match_str, stats=""):
-    prompt=f"Simule EA FC 26: {match_str} Stats {stats}. En français uniquement. Format: SCORE EXACT: {match_str} | PRINCIPAL: 2-1 (62%) | SECU 1-1 | FUN 2-0"
+    prompt=f"Simule EA FC 26: {match_str} Stats {stats}. En français uniquement."
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
     except: return f"🎯 SCORE EXACT: {match_str}\n🥇 2-1 (60%)"
 def predict_today_all(match_list):
     liste="\n".join([f"- {m}" for m in match_list])
-    prompt=f"Simulate EA FC 26 en français uniquement:\n{liste}\nFORMAT: 1. Team A vs Team B => 2-1 (62%) | Secu 1-1 | Fun 2-0."
+    prompt=f"Simule EA FC 26 en français:\n{liste}\nFORMAT: 1. Team A vs Team B => 2-1 (62%) | Secu 1-1 | Fun 2-0."
     try:
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
@@ -120,7 +120,7 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX 100% FR OK"
+def home(): return "Bot COURAGEUX LLAMA4 FR OK"
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -179,12 +179,12 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# === VISION 100% FRANCAIS + MEMOIRE ===
+# === VISION LLAMA 4 - 100% FRANCAIS ===
 async def handle_photo(update:Update, context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
-    caption=update.message.caption or "Donne les détails sur ce téléphone"
+    caption=update.message.caption or "Donne les détails"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     await update.message.reply_text(to_3d(f"📸 Reçue!\n❓ {caption}\n⏳ Analyse..."))
     try:
@@ -193,44 +193,31 @@ async def handle_photo(update:Update, context):
         await photo_file.download_to_drive(file_path)
         try:
             im=Image.open(file_path)
-            im.thumbnail((512,512))
-            im.save(file_path, "JPEG", quality=70)
+            im.thumbnail((640,640))
+            im.save(file_path, "JPEG", quality=75)
         except: pass
         with open(file_path, "rb") as f:
             b64=base64.b64encode(f.read()).decode('utf-8')
 
-        # PROMPT BLOQUE ANGLAIS
-        prompt_fr = f"""
-        Tu es COURAGEUX THE KING. Question: {caption}
-        RÈGLES ABSOLUES:
-        - Réponds UNIQUEMENT en FRANÇAIS. Jamais d'anglais.
-        - Pas de balise <think>, pas de réflexion en anglais.
-        - Sois court, 5 lignes max, style simple + un peu lingala.
-        - Si c'est un téléphone, donne marque, modèle, prix estimé.
-        """
-
         completion=groq_client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
-            messages=[{"role":"user","content":[
-                {"type":"text","text": prompt_fr},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-            ]}],
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Tu es COURAGEUX THE KING. Tu parles UNIQUEMENT en français avec un peu de lingala. Interdiction totale de parler anglais. Réponse courte, 5 lignes max."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Question: {caption}. Réponds en français uniquement, très court."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                    ]
+                }
+            ],
             temperature=0.3,
-            max_tokens=400
+            max_tokens=500
         )
-        rep=completion.choices[0].message.content
-
-        # NETTOYAGE TOTAL ANGLAIS + THINK
-        rep = re.sub(r'<think>.*?</think>', '', rep, flags=re.DOTALL)
-        rep = rep.replace('<think>', '').replace('</think>', '')
-        # Si il reste de l'anglais au début, on coupe
-        if "The user wants" in rep or "I need to" in rep:
-            # prend seulement après la dernière ligne anglaise
-            parts = rep.split("\n")
-            fr_parts = [p for p in parts if not any(w in p.lower() for w in ["the user", "i need to", "looking at", "this specific", "characteristic"])]
-            rep = "\n".join(fr_parts) if fr_parts else rep
-        rep = rep.strip()
-        if not rep: rep = "C'est un téléphone Philips, modèle récent avec 3 caméras. Prix estimé 80-120$. Oza bien Boss!"
+        rep=completion.choices[0].message.content.strip()
 
         conversations[uid].append({"role":"user","content": f"[PHOTO: {caption}]"})
         conversations[uid].append({"role":"assistant","content": rep})
@@ -238,7 +225,7 @@ async def handle_photo(update:Update, context):
 
         await update.message.reply_text(f"🔍 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur: {str(e)[:600]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"❌ Erreur vision: {str(e)[:800]}\n\n{SIGNATURE}")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
@@ -256,7 +243,7 @@ async def chat_gpt(update,context):
         comp=groq_client.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[
-                {"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + un peu lingala. Jamais d'anglais. Tu te souviens de tout, même des photos. Réponse courte."}
+                {"role":"system","content": f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en français + lingala. Jamais d'anglais. Tu te souviens de tout."}
             ]+conversations[uid][-10:],
             temperature=0.7
         )
