@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime
+import os, re, requests, threading, datetime, random
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -9,6 +9,26 @@ import yt_dlp
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
+
+# === VMESS ===
+VMESS_FILE = "vmess.txt"
+def load_vmess():
+    try:
+        env_data = os.getenv("VMESS_DATA")
+        if env_data:
+            return [l.strip() for l in env_data.splitlines() if l.strip().startswith("vmess://")]
+        if os.path.exists(VMESS_FILE):
+            with open(VMESS_FILE, "r") as f:
+                return [l.strip() for l in f if l.strip().startswith("vmess://")]
+        return []
+    except:
+        return []
+
+def get_random_vmess(n=5):
+    all_servers = load_vmess()
+    if not all_servers:
+        return None
+    return random.sample(all_servers, min(n, len(all_servers)))
 
 def to_3d(t):
     normal = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
@@ -87,7 +107,6 @@ def create_score_image(pred_text):
     path="/tmp/scores_today.png"
     img.save(path)
     return path
-
 def download_video(url, audio_only=False):
     url=clean_url(url)
     vid=get_yt_id(url) or "video"
@@ -119,43 +138,48 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX FIX OK"
+def home(): return "Bot COURAGEUX VMESS OK"
 
 async def start(update,context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Envoie lien YouTube\n🎯 /exact Team vs Team\n🔥 /today - Image BLEU=gagnant\n🎵 /mp3 + lien\n💬 Pose moi n'importe quelle question!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🎵 /mp3 + lien\n🔐 /vmess - Serveurs V2Ray\n💬 Pose moi n'importe quelle question!"))
+
+async def vmess_cmd(update, context):
+    servers = get_random_vmess(5)
+    if not servers:
+        await update.message.reply_text(to_3d(f"❌ Aucun serveur trouvé. Vérifie vmess.txt\n\n{SIGNATURE}"))
+        return
+    text = "🔐 SERVEURS VMESS ACTIFS\n\n"
+    for i, vm in enumerate(servers, 1):
+        text += f"{i}. `{vm}`\n\n"
+    text += f"📲 Importe dans V2RayNG / NapsternetV\n\n{SIGNATURE}"
+    await update.message.reply_text(to_3d(text), parse_mode="Markdown")
 
 async def score_cmd(update,context):
     stats=get_api_football_data("live")
     await update.message.reply_text(to_3d(f"📊 LIVE:\n{stats}\n\n{SIGNATURE}"))
-
 async def coupon_cmd(update,context,typ="normal"):
-    comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Analyse stats football jeu video EA FC: {get_real_scores()}"}])
+    comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Analyse stats football EA FC: {get_real_scores()}"}])
     await update.message.reply_text(to_3d(f"{comp.choices[0].message.content}\n\n{SIGNATURE}"))
-
 async def exact_cmd(update:Update,context):
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     if not context.args: await update.message.reply_text(to_3d("🎯 /exact Man City vs Arsenal"));return
     match_query=" ".join(context.args)
-    await update.message.reply_text(to_3d(f"⏳ Simulation {match_query}..."))
     pred=predict_exact_score(match_query, get_api_football_data(match_query))
     img_path=create_score_image(pred)
     await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def today_cmd(update:Update,context):
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
-    await update.message.reply_text(to_3d("⏳ Génération image scores du jour..."))
     matchs=get_todays_fixtures()
     pred=predict_today_all(matchs)
     img_path=create_score_image(pred)
-    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant BLANC=Perdant\n\n{pred}\n\n{SIGNATURE}"))
+    await context.bot.send_photo(update.effective_chat.id, photo=open(img_path,'rb'), caption=to_3d(f"🔥 BLEU=Gagnant\n\n{pred}\n\n{SIGNATURE}"))
     await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def handle_download(update,context,audio_only=False):
     raw=update.message.text.strip()
     url=clean_url(raw.replace("/mp3","").strip())
     if not url.startswith("http") and context.args: url=clean_url(context.args[0])
     await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
-    await update.message.reply_text(to_3d("⏳ Téléchargement via Cobalt..."))
+    await update.message.reply_text(to_3d("⏳ Téléchargement..."))
     import asyncio
     loop=asyncio.get_event_loop()
     fp,t,d=await loop.run_in_executor(None,download_video,url,audio_only)
@@ -170,7 +194,6 @@ async def handle_download(update,context,audio_only=False):
         except Exception as e: await update.message.reply_text(to_3d(f"❌ {e}"))
     else: await update.message.reply_text(to_3d(f"❌ {t}\n\n{SIGNATURE}"))
 
-# CERVEAU IA RÉTABLI
 async def chat_gpt(update,context):
     txt=update.message.text
     low=txt.lower()
@@ -182,18 +205,18 @@ async def chat_gpt(update,context):
         await today_cmd(update,context);return
     if any(k in low for k in ["coupon","pari","safe","combo"]):
         await coupon_cmd(update,context);return
+    if "vmess" in low or "v2ray" in low or "serveur" in low:
+        await vmess_cmd(update,context);return
     if "score" in low and "exact" not in low:
         await score_cmd(update,context);return
-
-    # Réponse IA normale
     uid=update.effective_user.id
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     try:
-        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, un assistant intelligent, drôle, qui parle français avec un peu de lingala. Tu aides pour tout: foot, musique, vie, blagues."}]+conversations[uid][-10:],temperature=0.7)
+        comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}, assistant intelligent, drôle, parle français + lingala. Tu aides pour tout."}]+conversations[uid][-10:],temperature=0.7)
         rep=comp.choices[0].message.content
-    except: rep="Yo Boss! Je suis là, pose ta question!"
+    except: rep="Yo Boss! Je suis là!"
     conversations[uid].append({"role":"assistant","content":rep})
     if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
@@ -206,10 +229,10 @@ app.add_handler(CommandHandler("coupon",lambda u,c: coupon_cmd(u,c,"normal")))
 app.add_handler(CommandHandler("safe",lambda u,c: coupon_cmd(u,c,"safe")))
 app.add_handler(CommandHandler("combo",lambda u,c: coupon_cmd(u,c,"combo")))
 app.add_handler(CommandHandler("exact",exact_cmd))
-app.add_handler(CommandHandler("scoreexact",exact_cmd))
 app.add_handler(CommandHandler("today",today_cmd))
 app.add_handler(CommandHandler("tous",today_cmd))
-app.add_handler(CommandHandler("exacttoday",today_cmd))
+app.add_handler(CommandHandler("vmess",vmess_cmd))
+app.add_handler(CommandHandler("v2ray",vmess_cmd))
 app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,chat_gpt))
 app.run_polling()
