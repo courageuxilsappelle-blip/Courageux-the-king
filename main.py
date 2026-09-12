@@ -27,7 +27,7 @@ def get_total_users():
 async def stats_cmd(update, context):
     save_user(update.effective_user.id)
     total = get_total_users()
-    await update.message.reply_text(f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n👥 Total utilisateurs: {total}\n💬 Chats actifs: {len(conversations)}\n🕒 {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n{SIGNATURE}")
+    await update.message.reply_text(f"📊 STATS BOT - COURAGEUX THE KING 👑\n\n👥 Total: {total}\n💬 Chats: {len(conversations)}\n🕒 {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n{SIGNATURE}")
 
 VMESS_FILE = "vmess.txt"
 def load_vmess():
@@ -53,7 +53,7 @@ def get_yt_id(u):
     return m.group(1) if m else None
 def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
 
-# === TRACE + CHECK 200 OK VRAI ===
+# === TRACE + SCAN 200 OK RÉEL ===
 def get_host_info(host):
     info = {}
     try:
@@ -77,7 +77,6 @@ def get_host_info(host):
 
 def check_port_200(host, ip, port):
     result = {"port": port, "open": False, "status": "FERMÉ", "is_200": False, "code": 0}
-    # 1. Test si port ouvert avec socket
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(2)
@@ -89,18 +88,13 @@ def check_port_200(host, ip, port):
     except:
         return result
 
-    # 2. Maintenant test HTTP CODE RÉEL avec requests
     try:
-        # Choix du protocole selon port
         if port in [443, 8443, 2096, 2053, 2083]:
-            url = f"https://{host}:{port}"
-            # pour IP direct si host est domaine, on teste aussi IP
-            urls_to_try = [f"https://{host}:{port}", f"https://{ip}:{port}"]
+            urls = [f"https://{host}:{port}", f"https://{ip}:{port}"]
         else:
-            url = f"http://{host}:{port}"
-            urls_to_try = [f"http://{host}:{port}", f"http://{ip}:{port}", f"http://{ip}"]
+            urls = [f"http://{host}:{port}", f"http://{ip}:{port}"]
 
-        for u in urls_to_try[:2]:
+        for u in urls:
             try:
                 r = requests.get(u, timeout=4, verify=False, headers={"User-Agent":"Mozilla/5.0"})
                 code = r.status_code
@@ -111,37 +105,30 @@ def check_port_200(host, ip, port):
                 elif code in [301,302,307,308]:
                     result["status"] = f"🔀 {code} Redirect - VIVANT"
                     result["is_200"] = True
-                elif code == 403:
-                    result["status"] = "⚠️ 403 Forbidden (mais vivant)"
-                    result["is_200"] = True
-                elif code == 401:
-                    result["status"] = "🔐 401 Auth - Proxy vivant"
+                elif code in [403,401]:
+                    result["status"] = f"🔐 {code} Auth/Forbidden - VIVANT"
                     result["is_200"] = True
                 else:
                     result["status"] = f"📄 {code} {r.reason}"
                     result["is_200"] = True if code < 500 else False
                 break
             except requests.exceptions.SSLError:
-                # Si HTTPS échoue, c'est quand même ouvert mais pas HTTP
-                result["status"] = "🔒 TLS Ouvert (pas HTTP) - VMess/VLESS probable"
-                result["is_200"] = False
+                result["status"] = "🔒 TLS Ouvert (VMess/VLESS probable)"
                 break
             except:
                 continue
 
-        # Si requests a tout échoué mais port ouvert
         if result["code"] == 0 and result["open"]:
-            result["status"] = "🟢 OUVERT (pas de réponse HTTP) - Proxy TCP/VMess probable"
+            result["status"] = "🟢 OUVERT (pas HTTP) - TCP/VMess"
 
     except Exception as e:
         result["status"] = f"🟢 OUVERT ({e})"
-
     return result
 
 async def scan_cmd(update, context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🔍 SCAN 200 OK\n/scan host\n/scan host 80\n/scan200 host = seulement 200 OK\n\nCOURAGEUX THE KING")
+        await update.message.reply_text(f"🔍 SCAN 200 OK\n/scan host\n/scan host 80\n/scan200 host = que 200 OK\n/mtr ip1 ip2 ip3 = scan liste MTR\n\n{SIGNATURE}")
         return
     host_raw = context.args[0].replace("http://","").replace("https://","").split("/")[0]
     host = host_raw.split(":")[0]
@@ -150,7 +137,7 @@ async def scan_cmd(update, context):
         ports = [int(context.args[1])]
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"🔍 Traçage de {host} en cours...")
+    await update.message.reply_text(f"🔍 Traçage de {host}...")
 
     import asyncio
     loop = asyncio.get_event_loop()
@@ -175,7 +162,7 @@ async def scan_cmd(update, context):
 
     count_200 = 0
     for r in results:
-        if r["is_200"] or r["code"]==200:
+        if r["is_200"]:
             count_200 += 1
             text += f"✅ {r['port']}: {r['status']} (code {r['code']})\n"
         else:
@@ -185,9 +172,9 @@ async def scan_cmd(update, context):
                 text += f"❌ {r['port']}: FERMÉ\n"
 
     if count_200 > 0:
-        text += f"\n🎯 {count_200} HOST(S) 200 OK VIVANT(S)!\n"
+        text += f"\n🎯 {count_200} HOST(S) 200 OK!\n"
     else:
-        text += f"\n❌ Aucun 200 OK pur, mais {len([x for x in results if x['open']])} ports ouverts\n"
+        text += f"\n❌ Aucun 200 OK pur\n"
 
     text += f"\n{SIGNATURE}"
     if len(text)>4000: text=text[:4000]
@@ -196,12 +183,13 @@ async def scan_cmd(update, context):
 async def scan200_cmd(update, context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("Usage: /scan200 host\n\nCOURAGEUX THE KING"); return
+        await update.message.reply_text(f"Usage: /scan200 ncmrsb-ai-in-f14.1e100.net\n\n{SIGNATURE}"); return
     host_raw = context.args[0].replace("http://","").replace("https://","").split("/")[0]
     host = host_raw.split(":")[0]
     import asyncio
     loop = asyncio.get_event_loop()
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    await update.message.reply_text(f"🎯 Recherche 200 OK sur {host}...")
     host_info = await loop.run_in_executor(None, get_host_info, host)
     ip = host_info.get("ip", host)
     ports = [80, 443, 8080, 1080, 3128, 8000, 8888, 10808, 2080, 2053, 8443, 2096]
@@ -211,7 +199,7 @@ async def scan200_cmd(update, context):
         if r["is_200"]:
             found.append(r)
     if found:
-        text=f"🎯 HOSTS 200 OK: {host} ({ip})\n━━━━━━━━━━━━━━\n"
+        text=f"🎯 200 OK: {host} ({ip})\n━━━━━━━━━━━━━━\n"
         for r in found:
             text+=f"✅ Port {r['port']}: {r['status']} Code {r['code']}\n"
         text+=f"\n💡 {len(found)} vivant(s)!\n\n{SIGNATURE}"
@@ -219,7 +207,49 @@ async def scan200_cmd(update, context):
         text=f"❌ Aucun 200 OK sur {host} ({ip})\n\n{SIGNATURE}"
     await update.message.reply_text(text)
 
-# === RESTE DU BOT ===
+async def mtr_cmd(update, context):
+    save_user(update.effective_user.id)
+    if not context.args:
+        await update.message.reply_text(f"🔍 SCAN MTR\n/mtr 163.227.128.102 103.216.222.72 142.250.160.10\n\nColle les IP de ton image MTR\n\n{SIGNATURE}")
+        return
+    raw = " ".join(context.args)
+    ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
+    ips = list(dict.fromkeys(ips)) # unique
+
+    if not ips:
+        await update.message.reply_text(f"❌ Aucune IP trouvée\n\n{SIGNATURE}"); return
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    await update.message.reply_text(f"🔍 Scan 200 OK de {len(ips)} HOSTS MTR...")
+
+    results_text = f"🌍 SCAN MTR {len(ips)} HOSTS\n━━━━━━━━━━━━━━\n"
+    found_200 = []
+    for ip in ips[:20]:
+        r80 = await loop.run_in_executor(None, check_port_200, ip, ip, 80)
+        r443 = await loop.run_in_executor(None, check_port_200, ip, ip, 443)
+        if r80["is_200"] or r443["is_200"]:
+            found_200.append(ip)
+            code = r80["code"] or r443["code"]
+            results_text += f"✅ {ip}: 200 OK code {code} VIVANT!\n"
+        else:
+            if r80["open"] or r443["open"]:
+                results_text += f"🟡 {ip}: Ouvert mais pas 200\n"
+            else:
+                results_text += f"❌ {ip}: Fermé\n"
+
+    if found_200:
+        results_text += f"\n🎯 {len(found_200)} AVEC 200 OK:\n"
+        for ip in found_200:
+            results_text += f"👉 {ip}:80 / :443\n"
+    else:
+        results_text += f"\n❌ Aucun 200 OK dans MTR (normal, ce sont des routeurs)\n💡 Teste la destination finale: ncmrsb-ai-in-f14.1e100.net\n"
+
+    results_text += f"\n{SIGNATURE}"
+    await update.message.reply_text(results_text)
+
+# === FOOT + DOWNLOAD + VISION ===
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
@@ -285,11 +315,11 @@ def download_video(url, audio_only=False):
 
 flask_app=Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot COURAGEUX 200 FIX OK"
+def home(): return "Bot COURAGEUX V14 MTR+200 OK"
 async def start(update,context):
     save_user(update.effective_user.id)
     if update.effective_user.id not in conversations: conversations[update.effective_user.id]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host\n🎯 /scan200 host (que 200 OK)\n📊 /stats"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n📸 Photo + question\n📥 Lien YouTube\n🎯 /exact Team vs Team\n🔥 /today\n🔐 /vmess\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n📊 /stats"))
 async def vmess_cmd(update, context):
     save_user(update.effective_user.id)
     servers=get_random_vmess(5)
@@ -389,14 +419,4 @@ app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
 app.add_handler(CommandHandler("start",start))
 app.add_handler(CommandHandler("exact",exact_cmd))
 app.add_handler(CommandHandler("today",today_cmd))
-app.add_handler(CommandHandler("tous",today_cmd))
-app.add_handler(CommandHandler("vmess",vmess_cmd))
-app.add_handler(CommandHandler("v2ray",vmess_cmd))
-app.add_handler(CommandHandler("stats",stats_cmd))
-app.add_handler(CommandHandler("scan",scan_cmd))
-app.add_handler(CommandHandler("trace",scan_cmd))
-app.add_handler(CommandHandler("scan200",scan200_cmd))
-app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
-app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-app.run_polling()
+app.add_handler(Command
