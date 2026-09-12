@@ -1,4 +1,4 @@
-import os, threading, requests
+import os, threading, requests, re
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -17,65 +17,100 @@ def to_3d(text):
 def clean_url(url):
     return url.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0].split('&si=')[0]
 
+def get_yt_id(url):
+    m = re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})', url)
+    return m.group(1) if m else None
+
 def is_link(text):
     return any(x in text.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
 
 def get_real_scores():
     try:
         r = requests.get("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard", timeout=8).json()
-        matches = [f"{e['name']}" for e in r.get("events", [])[:10]]
-        return "\n".join(matches)
+        return "\n".join([e['name'] for e in r.get("events", [])[:10]])
     except:
-        return "Matchs du jour: Premier League, La Liga..."
+        return "Matchs du jour"
 
-def download_via_cobalt(url, audio_only=False):
-    # API qui contourne tout blocage YouTube
-    try:
-        payload = {
-            "url": url,
-            "vQuality": "480",
-            "aFormat": "mp3" if audio_only else "best",
-            "isAudioOnly": audio_only,
-            "filenamePattern": "basic"
-        }
-        headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        # On essaie plusieurs instances cobalt
-        for api in ["https://api.cobalt.tools/api/json", "https://co.wuk.sh/api/json"]:
-            try:
-                res = requests.post(api, json=payload, headers=headers, timeout=20)
-                data = res.json()
-                if data.get("status") in ["tunnel", "redirect"]:
-                    dl_url = data.get("url")
-                    if dl_url:
-                        # Télécharge le fichier
-                        fname = "/tmp/video_cobalt.mp4" if not audio_only else "/tmp/audio_cobalt.mp3"
-                        with requests.get(dl_url, stream=True, timeout=60) as r:
-                            r.raise_for_status()
-                            with open(fname, 'wb') as f:
-                                for chunk in r.iter_content(chunk_size=8192):
-                                    f.write(chunk)
-                        return fname, "Video via Cobalt", 0
-            except Exception as e:
-                print(f"Cobalt {api} fail: {e}")
+def download_youtube_via_piped(url, audio_only=False):
+    vid = get_yt_id(url)
+    if not vid:
+        return None, "ID YouTube non trouvé", 0
+
+    # Liste d'instances Piped (si une tombe, l'autre marche)
+    piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://pipedapi.adminforge.de",
+        "https://api.piped.yt",
+        "https://pipedapi.drgns.space"
+    ]
+
+    for api in piped_instances:
+        try:
+            print(f"Essaie Piped: {api}")
+            r = requests.get(f"{api}/streams/{vid}", timeout=15)
+            if r.status_code!= 200:
                 continue
-        return None, "Cobalt fail", 0
-    except Exception as e:
-        return None, str(e), 0
+            data = r.json()
+
+            if audio_only:
+                streams = data.get("audioStreams", [])
+                if not streams: continue
+                best = streams[0] # meilleur audio
+                dl_url = best.get("url")
+                ext = ".mp3"
+            else:
+                streams = data.get("videoStreams", [])
+                if not streams: continue
+                # Prend 480p ou 360p pour rester <50MB
+                best = None
+                for q in ["480p", "360p", "720p"]:
+                    for s in streams:
+                        if s.get("quality") == q and s.get("mimeType","").startswith("video/mp4"):
+                            best = s
+                            break
+                    if best: break
+                if not best:
+                    best = streams[0]
+                dl_url = best.get("url")
+                ext = ".mp4"
+
+            if not dl_url:
+                continue
+
+            fname = f"/tmp/{vid}{ext}"
+            print(f"Download from Piped: {dl_url[:100]}")
+            with requests.get(dl_url, stream=True, timeout=90) as rr:
+                rr.raise_for_status()
+                with open(fname, 'wb') as f:
+                    for chunk in rr.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            if os.path.exists(fname) and os.path.getsize(fname) > 1000:
+                return fname, data.get("title", "Video"), data.get("duration", 0)
+
+        except Exception as e:
+            print(f"Piped {api} fail: {e}")
+            continue
+
+    return None, "Piped fail", 0
 
 def download_video(url, audio_only=False):
     url = clean_url(url)
-    # 1. Essaie Cobalt en premier (marche même si YouTube bloque)
-    f, t, d = download_via_cobalt(url, audio_only)
-    if f and os.path.exists(f):
-        return f, t, d
 
-    # 2. Sinon essaie yt-dlp (pour TikTok, Insta, FB)
+    # Si c'est YouTube -> utilise Piped (anti-bot)
+    if "youtu" in url or "youtube.com" in url:
+        f, t, d = download_youtube_via_piped(url, audio_only)
+        if f:
+            return f, t, d
+
+    # Pour TikTok / Insta / FB -> yt-dlp marche encore
     opts = {
         'format': 'bestaudio/best' if audio_only else 'best[height<=480]/best',
         'outtmpl': '/tmp/%(title)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
-        'extractor_args': {'youtube': {'player_client': ['android']}},
+        'no_check_certificate': True,
         'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'128'}] if audio_only else [],
     }
     try:
@@ -91,40 +126,38 @@ def download_video(url, audio_only=False):
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot Cobalt FIX OK"
+def home(): return "Bot Piped FIX OK"
 
 async def start(update: Update, context):
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n\n📥 Envoie lien YouTube/TikTok/Insta\n⚽ /coupon - Coupons\n📊 /score - Scores live\n🎵 /mp3 + lien - Audio\n\nNouveau système anti-blocage activé!"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE} 👑\n\n📥 Envoie lien YouTube/TikTok/Insta\n⚽ /coupon\n📊 /score\n🎵 /mp3 + lien\n\nNouveau système Piped activé - YouTube débloqué!"))
 
 async def score_cmd(update: Update, context):
-    scores = get_real_scores()
-    await update.message.reply_text(to_3d(f"📊 SCORES:\n{scores}\n\n{SIGNATURE}"))
+    await update.message.reply_text(to_3d(f"📊 {get_real_scores()}\n\n{SIGNATURE}"))
 
 async def coupon_cmd(update: Update, context, typ="normal"):
     real = get_real_scores()
-    instr = "Donne 3 coupons SAFE/NORMAL/FUN" if typ=="normal" else "Donne 1 coupon SAFE cote 1.80" if typ=="safe" else "Donne 1 COMBO cote 10"
-    prompt = f"Tu es {SIGNATURE} expert paris. Matchs: {real}. {instr}"
+    prompt = f"Tu es {SIGNATURE} expert paris. Matchs: {real}. Donne 3 coupons."
     comp = groq_client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content":prompt}])
     await update.message.reply_text(to_3d(f"{comp.choices[0].message.content}\n\n{SIGNATURE}"))
 
 async def handle_download(update: Update, context, audio_only=False):
     raw = update.message.text.strip()
     url = clean_url(raw.replace("/mp3","").strip())
-    if not url.startswith("http"):
-        if context.args: url = clean_url(context.args[0])
-        else:
-            await update.message.reply_text(to_3d("Envoie: /mp3 + lien YouTube"))
-            return
+    if not url.startswith("http") and context.args:
+        url = clean_url(context.args[0])
+
     await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-    await update.message.reply_text(to_3d("⏳ Téléchargement avec nouveau système anti-blocage YouTube..."))
+    await update.message.reply_text(to_3d("⏳ Téléchargement via Piped (contourne blocage YouTube)... 20s max"))
+
     import asyncio
     loop = asyncio.get_event_loop()
     filepath, title, duration = await loop.run_in_executor(None, download_video, url, audio_only)
+
     if filepath and os.path.exists(filepath):
         size = os.path.getsize(filepath)/(1024*1024)
         if size>50:
             os.remove(filepath)
-            await update.message.reply_text(to_3d(f"❌ Trop lourd {size:.1f}MB. Essaie /mp3 {url}\n\n{SIGNATURE}"))
+            await update.message.reply_text(to_3d(f"❌ {size:.1f}MB trop lourd. Fais /mp3 {url}\n\n{SIGNATURE}"))
             return
         try:
             with open(filepath,'rb') as f:
@@ -136,13 +169,12 @@ async def handle_download(update: Update, context, audio_only=False):
         except Exception as e:
             await update.message.reply_text(to_3d(f"❌ Erreur envoi: {e}\n{SIGNATURE}"))
     else:
-        await update.message.reply_text(to_3d(f"❌ Erreur: {title}\nEssaie un lien TikTok pour tester, YouTube est en maintenance.\n\n{SIGNATURE}"))
+        await update.message.reply_text(to_3d(f"❌ Piped surchargé, réessaie dans 30s.\nErreur: {title[:200]}\n\n{SIGNATURE}"))
 
 async def chat_gpt(update: Update, context):
     text = update.message.text
     if is_link(text):
-        await handle_download(update, context, False)
-        return
+        await handle_download(update, context, False); return
     if any(k in text.lower() for k in ["coupon","pari","prono"]):
         await coupon_cmd(update, context, "normal"); return
     if "score" in text.lower():
