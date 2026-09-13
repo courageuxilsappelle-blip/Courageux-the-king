@@ -8,7 +8,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print(f"=== V24.1 FIX TOKEN={bool(TOKEN)} GROQ={bool(GROQ_KEY)} ===")
+print(f"=== V24.2 GRANDS MATCHS ONLY TOKEN={bool(TOKEN)} ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -20,7 +20,7 @@ SIGNATURE = "COURAGEUX THE KING"
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return f"Bot {SIGNATURE} V24.1 LIVE"
+def home(): return f"Bot {SIGNATURE} V24.2 LIVE"
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(2)
 
@@ -62,58 +62,75 @@ def get_random_vmess(n=5):
     a=load_vmess()
     return random.sample(a, min(n,len(a))) if a else None
 
+# === GRANDS MATCHS UNIQUEMENT - FILTRE ULTRA STRICT ===
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
         today=datetime.datetime.now().strftime("%Y-%m-%d")
-        TOP_LEAGUES = [39, 140, 135, 78, 61, 2, 3, 848, 94, 88, 15, 45, 40, 41, 42]
-        BIG_TEAMS = ["barcelona","real madrid","atletico","man city","manchester city","manchester united","arsenal","liverpool","chelsea","psg","bayern","dortmund","juventus","inter","milan","napoli"]
+        TOP_LEAGUES = [39, 140, 135, 78, 61, 2, 3]
         if not key:
-            return ["Barcelona vs Real Madrid","Manchester City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund","Inter vs Milan"]
+            return ["Barcelona vs Real Madrid","Manchester City vs Arsenal","PSG vs Marseille","Bayern Munich vs Dortmund","Inter vs AC Milan","Liverpool vs Chelsea"]
+
         headers={"x-apisports-key":key}
         resp=requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
         fixtures=resp.get("response",[])
         big_matchs=[]
+        BAN = ["W", "WOMEN", "FEM", "U19", "U20", "U21", "U23", " II", " B ", "YOUTH", "RESERVE", "AMATEUR", "WOMAN"]
+
         for f in fixtures:
             league_id=f.get("league",{}).get("id",0)
+            if league_id not in TOP_LEAGUES:
+                continue
             home_name=f['teams']['home']['name']
             away_name=f['teams']['away']['name']
-            if league_id in TOP_LEAGUES or any(bt in home_name.lower() or bt in away_name.lower() for bt in BIG_TEAMS):
-                if "W " not in home_name and "II" not in home_name:
-                    big_matchs.append(f"{home_name} vs {away_name}")
-        if len(big_matchs) < 2:
+            upper = f"{home_name} {away_name}".upper()
+            if any(b in upper for b in BAN):
+                continue
+            if home_name.endswith(" W") or away_name.endswith(" W"):
+                continue
+            big_matchs.append(f"{home_name} vs {away_name}")
+
+        if len(big_matchs) < 3:
             for i in range(1,4):
                 next_day=(datetime.datetime.now()+datetime.timedelta(days=i)).strftime("%Y-%m-%d")
                 try:
                     r2=requests.get(f"https://v3.football.api-sports.io/fixtures?date={next_day}",headers=headers,timeout=10).json()
-                    for f in r2.get("response",[])[:40]:
-                        league_id=f.get("league",{}).get("id",0)
-                        if league_id in TOP_LEAGUES:
-                            big_matchs.append(f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}")
-                        if len(big_matchs)>=8:
+                    for f in r2.get("response",[]):
+                        if f.get("league",{}).get("id",0) not in TOP_LEAGUES:
+                            continue
+                        hn=f['teams']['home']['name']; an=f['teams']['away']['name']
+                        up=f"{hn} {an}".upper()
+                        if any(b in up for b in BAN):
+                            continue
+                        label = f"{hn} vs {an} (Demain)" if i==1 else f"{hn} vs {an} (J+{i})"
+                        if label not in big_matchs:
+                            big_matchs.append(label)
+                        if len(big_matchs)>=6:
                             break
                 except: continue
                 if len(big_matchs)>=5:
                     break
+
         if not big_matchs:
-            return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund"]
-        return big_matchs[:10]
-    except:
-        return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille"]
+            return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund","Liverpool vs Chelsea"]
+        return big_matchs[:8]
+    except Exception as e:
+        print(f"FIXTURE ERROR {e}")
+        return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund"]
 
 def predict_exact_score(match):
     if not groq_client: return f"{match} => 2-1 (60%)"
     try:
-        prompt = "Simule EA FC 26 en francais uniquement, score exact + pourcentage + buteurs pour: " + match
+        prompt = "Simule EA FC 26 en francais uniquement, score exact + pourcentage + 2 buteurs pour: " + match
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
-    except: return f"{match} => 2-1 (60%)"
+    except: return f"{match} => 2-1 (60%) Buteur: Haaland, Vinicius"
 
 def predict_today_all(ml):
     liste = "\n".join([f"- {m}" for m in ml])
     if not groq_client: return "\n".join([f"{m} => 2-1 (60%)" for m in ml])
     try:
-        prompt = "Simule EA FC 26 aujourdhui en francais uniquement, grands matchs:\n" + liste + "\nFormat: Team vs Team => 2-1 (62%) Buteurs: Nom"
+        prompt = "Simule EA FC 26 aujourdhui en francais uniquement pour ces grands matchs:\n" + liste + "\nFormat strict pour chaque ligne: Team vs Team => 2-1 (62%) Buteurs: Nom, Nom"
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
     except: return "\n".join([f"{m} => 2-1 (60%)" for m in ml])
@@ -160,8 +177,7 @@ def download_video(url, audio_only=False):
 
 def get_host_info(host):
     info={}
-    try:
-        ip=socket.gethostbyname(host); info["ip"]=ip
+    try: ip=socket.gethostbyname(host); info["ip"]=ip
     except Exception as e: info["error"]=str(e)
     return info
 
@@ -230,7 +246,7 @@ async def scan200_cmd(update, context):
 async def start(update,context):
     save_user(update.effective_user.id)
     if update.effective_user.id not in conversations: conversations[update.effective_user.id]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo + question\n📥 Lien YouTube TikTok\n🎯 /exact Team vs Team\n🔥 /today = Grands matchs seulement\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n🔐 /vmess /stats"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo + question\n📥 Lien YouTube TikTok\n🎯 /exact Team vs Team\n🔥 /today = Grands matchs seulement (Barca, Real, City, PSG...)\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n🔐 /vmess /stats"))
 
 async def stats_cmd(update, context):
     save_user(update.effective_user.id)
@@ -321,7 +337,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V24.1 FIX...")
+    print("Building V24.2 GRANDS MATCHS ONLY...")
     app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("exact",exact_cmd))
@@ -337,7 +353,7 @@ def main():
     app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V24.1 Polling GO...")
+    print("V24.2 Polling GO GRANDS MATCHS...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
