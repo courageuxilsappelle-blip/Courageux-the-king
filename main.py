@@ -8,7 +8,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print(f"=== V24.2 GRANDS MATCHS ONLY TOKEN={bool(TOKEN)} ===")
+print(f"=== V24.3 GRANDS MATCHS FIX ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -20,7 +20,7 @@ SIGNATURE = "COURAGEUX THE KING"
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return f"Bot {SIGNATURE} V24.2 LIVE"
+def home(): return f"Bot {SIGNATURE} V24.3 LIVE"
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(2)
 
@@ -62,20 +62,20 @@ def get_random_vmess(n=5):
     a=load_vmess()
     return random.sample(a, min(n,len(a))) if a else None
 
-# === GRANDS MATCHS UNIQUEMENT - FILTRE ULTRA STRICT ===
 def get_todays_fixtures():
     try:
         key=os.getenv("API_FOOTBALL_KEY")
         today=datetime.datetime.now().strftime("%Y-%m-%d")
         TOP_LEAGUES = [39, 140, 135, 78, 61, 2, 3]
+        BAN = ["W ", "WOMEN", "FEM", "U19", "U20", "U21", "U23", " II", " B ", "YOUTH", "RESERVE", "AMATEUR"]
+
         if not key:
-            return ["Barcelona vs Real Madrid","Manchester City vs Arsenal","PSG vs Marseille","Bayern Munich vs Dortmund","Inter vs AC Milan","Liverpool vs Chelsea"]
+            return ["Barcelona vs Real Madrid","Manchester City vs Arsenal","PSG vs Marseille","Bayern Munich vs Dortmund","Inter vs AC Milan (Demain)","Liverpool vs Chelsea (Demain)"]
 
         headers={"x-apisports-key":key}
         resp=requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
         fixtures=resp.get("response",[])
         big_matchs=[]
-        BAN = ["W", "WOMEN", "FEM", "U19", "U20", "U21", "U23", " II", " B ", "YOUTH", "RESERVE", "AMATEUR", "WOMAN"]
 
         for f in fixtures:
             league_id=f.get("league",{}).get("id",0)
@@ -90,7 +90,8 @@ def get_todays_fixtures():
                 continue
             big_matchs.append(f"{home_name} vs {away_name}")
 
-        if len(big_matchs) < 3:
+        # Si rien aujourd'hui, cherche les 3 prochains jours OBLIGATOIREMENT
+        if len(big_matchs) == 0:
             for i in range(1,4):
                 next_day=(datetime.datetime.now()+datetime.timedelta(days=i)).strftime("%Y-%m-%d")
                 try:
@@ -105,18 +106,18 @@ def get_todays_fixtures():
                         label = f"{hn} vs {an} (Demain)" if i==1 else f"{hn} vs {an} (J+{i})"
                         if label not in big_matchs:
                             big_matchs.append(label)
-                        if len(big_matchs)>=6:
+                        if len(big_matchs)>=8:
                             break
                 except: continue
                 if len(big_matchs)>=5:
                     break
 
-        if not big_matchs:
-            return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund","Liverpool vs Chelsea"]
+        if len(big_matchs)==0:
+            return ["Barcelona vs Real Madrid (Demain)","Man City vs Arsenal (Demain)","PSG vs Marseille (Demain)","Bayern vs Dortmund (J+2)","Liverpool vs Chelsea (J+2)"]
+
         return big_matchs[:8]
-    except Exception as e:
-        print(f"FIXTURE ERROR {e}")
-        return ["Barcelona vs Real Madrid","Man City vs Arsenal","PSG vs Marseille","Bayern vs Dortmund"]
+    except:
+        return ["Barcelona vs Real Madrid (Demain)","Man City vs Arsenal (Demain)","PSG vs Marseille (Demain)"]
 
 def predict_exact_score(match):
     if not groq_client: return f"{match} => 2-1 (60%)"
@@ -124,13 +125,13 @@ def predict_exact_score(match):
         prompt = "Simule EA FC 26 en francais uniquement, score exact + pourcentage + 2 buteurs pour: " + match
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
-    except: return f"{match} => 2-1 (60%) Buteur: Haaland, Vinicius"
+    except: return f"{match} => 2-1 (60%)"
 
 def predict_today_all(ml):
     liste = "\n".join([f"- {m}" for m in ml])
     if not groq_client: return "\n".join([f"{m} => 2-1 (60%)" for m in ml])
     try:
-        prompt = "Simule EA FC 26 aujourdhui en francais uniquement pour ces grands matchs:\n" + liste + "\nFormat strict pour chaque ligne: Team vs Team => 2-1 (62%) Buteurs: Nom, Nom"
+        prompt = "Simule EA FC 26 aujourdhui en francais uniquement pour ces grands matchs:\n" + liste + "\nFormat strict: Team vs Team => 2-1 (62%) Buteurs: Nom, Nom"
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
     except: return "\n".join([f"{m} => 2-1 (60%)" for m in ml])
@@ -271,8 +272,12 @@ async def exact_cmd(update,context):
 async def today_cmd(update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
-    await update.message.reply_text("Recherche des grands matchs...")
-    ml=get_todays_fixtures(); pred=predict_today_all(ml)
+    await update.message.reply_text("🔍 Recherche des grands matchs (Top 5 + C1)...")
+    ml=get_todays_fixtures()
+    is_future = any("Demain" in m or "J+" in m for m in ml)
+    if is_future and len(ml)>0:
+        await update.message.reply_text("⚠️ Pas de Top 5 aujourd'hui, voici les prochains grands matchs:")
+    pred=predict_today_all(ml)
     try:
         img=create_score_image(pred)
         await context.bot.send_photo(update.effective_chat.id, photo=open(img,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
@@ -337,7 +342,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V24.2 GRANDS MATCHS ONLY...")
+    print("Building V24.3 FIX...")
     app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("exact",exact_cmd))
@@ -353,7 +358,7 @@ def main():
     app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V24.2 Polling GO GRANDS MATCHS...")
+    print("V24.3 Polling GO...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__":
