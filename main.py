@@ -391,4 +391,4 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
     print("V25.1 Polling GO...")
-    app.run_polling(drop_pending_update
+        app.run_polling()
