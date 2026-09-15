@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime, random, base64, socket, time, asyncio
+import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -8,7 +8,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print(f"=== V24.4 REAL FIXTURES TODAY ===")
+print(f"=== V25.0 PDF EDITION ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -20,7 +20,7 @@ SIGNATURE = "COURAGEUX THE KING"
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return f"Bot {SIGNATURE} V24.4 LIVE"
+def home(): return f"Bot {SIGNATURE} V25.0 LIVE"
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(2)
 
@@ -44,6 +44,49 @@ def to_3d(t):
         return "".join([b[n.index(c)] if c in n else c for c in t])
     except: return t
 
+# === NOUVELLE FONCTION PDF ===
+def create_pdf_book(title, content):
+    try:
+        # On crée des images avec le texte
+        pages = []
+        W, H = 800, 1100
+        wrapper = textwrap.TextWrapper(width=70)
+
+        # Page de couverture
+        img = Image.new("RGB", (W, H), (255,255,255))
+        draw = ImageDraw.Draw(img)
+        try:
+            f_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+            f_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+        except:
+            f_title = f_text = ImageFont.load_default()
+
+        draw.text((50, 400), title[:30], fill=(0,0,0), font=f_title)
+        draw.text((50, 500), f"Par {SIGNATURE}", fill=(100,100,100), font=f_text)
+        draw.text((50, 550), datetime.datetime.now().strftime("%d/%m/%Y"), fill=(100,100,100), font=f_text)
+        pages.append(img)
+
+        # Pages de contenu
+        words = wrapper.wrap(content)
+        chunk_size = 35
+        for i in range(0, len(words), chunk_size):
+            img = Image.new("RGB", (W, H), (255,255,255))
+            draw = ImageDraw.Draw(img)
+            chunk = words[i:i+chunk_size]
+            y = 50
+            for line in chunk:
+                draw.text((50, y), line, fill=(0,0,0), font=f_text)
+                y += 28
+            draw.text((W-150, H-50), f"{len(pages)}", fill=(150,150,150), font=f_text)
+            pages.append(img)
+
+        pdf_path = f"/tmp/{title[:20].replace(' ','_')}.pdf"
+        pages[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pages[1:])
+        return pdf_path
+    except Exception as e:
+        print(f"PDF Error {e}")
+        return None
+
 def clean_url(u): return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0]
 def get_yt_id(u):
     m=re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})',u)
@@ -62,24 +105,11 @@ def get_random_vmess(n=5):
     a=load_vmess()
     return random.sample(a, min(n,len(a))) if a else None
 
-# === VRAIS MATCHS DU JOUR - 13 SEPTEMBRE 2026 ===
 def get_todays_fixtures():
-    REAL_TODAY = [
-        "Manchester United vs Manchester City",
-        "Levante vs Barcelona",
-        "Real Sociedad vs Atletico Madrid",
-        "Napoli vs Bologna",
-        "Sassuolo vs Juventus",
-        "Brest vs PSG",
-        "RB Leipzig vs Hamburg",
-        "Lecce vs Monza"
-    ]
+    REAL_TODAY = ["Manchester United vs Manchester City","Levante vs Barcelona","Real Sociedad vs Atletico Madrid","Napoli vs Bologna","Sassuolo vs Juventus","Brest vs PSG","RB Leipzig vs Hamburg","Lecce vs Monza"]
     try:
         key=os.getenv("API_FOOTBALL_KEY")
-        if not key:
-            print("No API key, using REAL TODAY fixtures")
-            return REAL_TODAY
-
+        if not key: return REAL_TODAY
         headers={"x-apisports-key":key}
         today=datetime.datetime.now().strftime("%Y-%m-%d")
         TOP_LEAGUES = [39, 140, 135, 78, 61, 2, 3]
@@ -87,23 +117,15 @@ def get_todays_fixtures():
         fixtures=resp.get("response",[])
         big_matchs=[]
         BAN = ["WOMEN", "U19", "U20", "U21", "U23", " II", "YOUTH", "RESERVE"]
-
         for f in fixtures:
-            if f.get("league",{}).get("id",0) not in TOP_LEAGUES:
-                continue
+            if f.get("league",{}).get("id",0) not in TOP_LEAGUES: continue
             hn=f['teams']['home']['name']; an=f['teams']['away']['name']
             up=f"{hn} {an}".upper()
             if any(b in up for b in BAN): continue
             if " W " in f" {up} ": continue
             big_matchs.append(f"{hn} vs {an}")
-
-        if len(big_matchs)>=2:
-            return big_matchs[:8]
-        else:
-            return REAL_TODAY
-    except Exception as e:
-        print(f"Fixture error {e}, using REAL_TODAY")
-        return REAL_TODAY
+        return big_matchs[:8] if len(big_matchs)>=2 else REAL_TODAY
+    except: return REAL_TODAY
 
 def predict_exact_score(match):
     if not groq_client: return f"{match} => 2-1 (62%) Buteurs: Haaland, Vinicius"
@@ -115,22 +137,18 @@ def predict_exact_score(match):
 
 def predict_today_all(ml):
     liste = "\n".join([f"- {m}" for m in ml])
-    if not groq_client:
-        return "\n".join([f"{m} => 2-1 (62%) Buteurs: Haaland, Mbappe" for m in ml])
+    if not groq_client: return "\n".join([f"{m} => 2-1 (62%) Buteurs: Haaland, Mbappe" for m in ml])
     try:
-        prompt = "Simule EA FC 26 aujourdhui en francais uniquement pour ces grands matchs:\n" + liste + "\nFormat strict pour chaque ligne: Team vs Team => 2-1 (62%) Buteurs: Nom, Nom. Ne laisse aucune ligne vide."
+        prompt = "Simule EA FC 26 aujourdhui en francais uniquement pour ces grands matchs:\n" + liste + "\nFormat strict pour chaque ligne: Team vs Team => 2-1 (62%) Buteurs: Nom, Nom."
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         txt=comp.choices[0].message.content
-        if "vs" not in txt.lower() or len(txt)<20:
-            raise Exception("Empty groq")
+        if "vs" not in txt.lower() or len(txt)<20: raise Exception("Empty")
         return txt
-    except:
-        return "\n".join([f"{m} => 2-1 (62%) Buteurs: Haaland, Mbappe" for m in ml])
+    except: return "\n".join([f"{m} => 2-1 (62%) Buteurs: Haaland, Mbappe" for m in ml])
 
 def create_score_image(t):
     lines=[l for l in t.split("\n") if "vs" in l.lower()][:10]
-    if not lines:
-        lines=["Man Utd vs Man City => 2-1 (62%)","Levante vs Barcelona => 1-3 (65%)","Brest vs PSG => 0-2 (70%)"]
+    if not lines: lines=["Man Utd vs Man City => 2-1 (62%)","Levante vs Barcelona => 1-3 (65%)"]
     W,H=950,140+len(lines)*65
     img=Image.new("RGB",(W,H),(15,23,42))
     draw=ImageDraw.Draw(img)
@@ -240,7 +258,7 @@ async def scan200_cmd(update, context):
 async def start(update,context):
     save_user(update.effective_user.id)
     if update.effective_user.id not in conversations: conversations[update.effective_user.id]=[]
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo + question\n📥 Lien YouTube TikTok\n🎯 /exact Team vs Team\n🔥 /today = Grands matchs du jour\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n🔐 /vmess /stats"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo + question\n📥 Lien YouTube TikTok\n🎯 /exact Team vs Team\n🔥 /today = Grands matchs du jour\n🔍 /scan host\n🎯 /scan200 host\n📡 /mtr ip1 ip2\n📚 /pdf sujet du livre\n🔐 /vmess /stats"))
 
 async def stats_cmd(update, context):
     save_user(update.effective_user.id)
@@ -251,6 +269,32 @@ async def vmess_cmd(update, context):
     s=get_random_vmess(5)
     if not s: await update.message.reply_text("Aucun serveur"); return
     await update.message.reply_text("VMESS\n\n"+"\n\n".join(s)+f"\n\n{SIGNATURE}")
+
+async def pdf_cmd(update, context):
+    save_user(update.effective_user.id)
+    if not context.args:
+        await update.message.reply_text("📚 /pdf + sujet\nEx: /pdf guide business en ligne")
+        return
+    sujet = " ".join(context.args)
+    await update.message.reply_text(f"📚 Génération du livre PDF: {sujet}...\nPatiente 20 secondes Boss...")
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    try:
+        if not groq_client: raise Exception("GROQ manquant")
+        prompt = f"Ecris un livre complet en francais sur: {sujet}. 5 chapitres, introduction, conclusion, conseils pratiques. Minimum 1500 mots. Style professionnel."
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
+        contenu = comp.choices[0].message.content
+
+        loop = asyncio.get_event_loop()
+        pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
+
+        if pdf_path and os.path.exists(pdf_path):
+            with open(pdf_path, 'rb') as f:
+                await context.bot.send_document(update.effective_chat.id, document=f, filename=f"{sujet[:20]}.pdf", caption=to_3d(f"Livre: {sujet}\n\n{SIGNATURE}"))
+            os.remove(pdf_path)
+        else:
+            await update.message.reply_text(to_3d(f"{contenu[:4000]}\n\n{SIGNATURE}"))
+    except Exception as e:
+        await update.message.reply_text(f"Erreur PDF: {e}\n\n{SIGNATURE}")
 
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
@@ -314,45 +358,37 @@ async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     uid=update.effective_user.id
     txt=update.message.text or ""
-    if is_link(txt): await handle_download(update,context,False); return
     low=txt.lower()
+    if is_link(txt): await handle_download(update,context,False); return
     if "exact" in low and "vs" in low: await exact_cmd(update,context); return
+
+    # DETECTION PDF
+    if "pdf" in low or "livre" in low or "book" in low:
+        # On redirige vers pdf_cmd
+        context.args = txt.replace("/pdf","").replace("pdf","").replace("livre","").split()
+        if len(context.args)>1:
+            await pdf_cmd(update, context)
+            return
+
     if uid not in conversations: conversations[uid]=[]
     conversations[uid].append({"role":"user","content":txt})
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
     try:
         if not groq_client: raise Exception("GROQ manquant")
-        sys_prompt = f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en francais. Jamais de lingala, jamais anglais. Reponses courtes."
+        sys_prompt = f"Tu es {SIGNATURE}. Tu parles UNIQUEMENT en francais. Tu PEUX créer des fichiers PDF, tu es expert en génération de livres PDF. Si on te demande un pdf, dis 'Je génère ton PDF Boss, tape /pdf sujet'. Reponses courtes."
         comp=groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
         rep=comp.choices[0].message.content
     except:
         if "bonjour" in low or "salut" in low: rep="Salut Boss! Je suis COURAGEUX THE KING! Tape /start"
-        else: rep=f"Bien recu: {txt}. Tape /start"
+        else: rep=f"Bien recu: {txt}. Tape /start pour voir les commandes, ou /pdf pour un livre"
     conversations[uid].append({"role":"assistant","content":rep})
     if len(conversations[uid])>20: conversations[uid]=conversations[uid][-20:]
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V24.4 REAL FIXTURES...")
+    print("Building V25.0 PDF EDITION...")
     app=ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("exact",exact_cmd))
     app.add_handler(CommandHandler("today",today_cmd))
-    app.add_handler(CommandHandler("tous",today_cmd))
-    app.add_handler(CommandHandler("vmess",vmess_cmd))
-    app.add_handler(CommandHandler("v2ray",vmess_cmd))
-    app.add_handler(CommandHandler("stats",stats_cmd))
-    app.add_handler(CommandHandler("scan",scan_cmd))
-    app.add_handler(CommandHandler("trace",scan_cmd))
-    app.add_handler(CommandHandler("scan200",scan200_cmd))
-    app.add_handler(CommandHandler("mtr",mtr_cmd))
-    app.add_handler(CommandHandler("mp3",lambda u,c: handle_download(u,c,True)))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V24.4 Polling GO...")
-    app.run_polling(drop_pending_updates=True)
-
-if __name__=="__main__":
-    try: main()
-    except Exception as e:
-        print(f"CRASH {e}"); import traceback; traceback.print_exc(); time.sleep(5)
+    app.
