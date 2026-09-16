@@ -18,7 +18,7 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
-
+from telegram import Update
 from PIL import Image, ImageDraw, ImageFont
 
 import urllib3
@@ -46,7 +46,6 @@ except Exception as e:
 # =========================================================
 
 conversations = {}
-
 SIGNATURE = "COURAGEUX THE KING"
 
 
@@ -73,11 +72,7 @@ def run_flask():
         print("Flask Error:", e)
 
 
-threading.Thread(
-    target=run_flask,
-    daemon=True
-).start()
-
+threading.Thread(target=run_flask, daemon=True).start()
 time.sleep(1)
 
 
@@ -99,7 +94,6 @@ def save_user(uid):
         if str(uid) not in d:
             with open(USERS_FILE, "a") as f:
                 f.write(f"{uid}\n")
-
     except Exception:
         pass
 
@@ -134,7 +128,6 @@ def to_3d(t):
             b[n.index(c)] if c in n else c
             for c in t
         )
-
     except Exception:
         return t
 
@@ -146,17 +139,10 @@ def to_3d(t):
 def create_pdf_book(title, content):
     try:
         pages = []
-
         W, H = 800, 1100
-
         wrapper = textwrap.TextWrapper(width=70)
 
-        img = Image.new(
-            "RGB",
-            (W, H),
-            (255, 255, 255)
-        )
-
+        img = Image.new("RGB", (W, H), (255, 255, 255))
         draw = ImageDraw.Draw(img)
 
         try:
@@ -164,54 +150,36 @@ def create_pdf_book(title, content):
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                 40
             )
-
             f_text = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 20
             )
-
         except Exception:
             f_title = f_text = ImageFont.load_default()
 
-        draw.text(
-            (50, 400),
-            title[:30],
-            fill=(0, 0, 0),
-            font=f_title
-        )
-
+        draw.text((50, 400), title[:30], fill=(0, 0, 0), font=f_title)
         draw.text(
             (50, 500),
             f"Par {SIGNATURE}",
             fill=(100, 100, 100),
             font=f_text
         )
-
         pages.append(img)
 
         words = wrapper.wrap(content)
 
         for i in range(0, len(words), 35):
-
-            img = Image.new(
-                "RGB",
-                (W, H),
-                (255, 255, 255)
-            )
-
+            img = Image.new("RGB", (W, H), (255, 255, 255))
             draw = ImageDraw.Draw(img)
-
             y = 50
 
             for line in words[i:i + 35]:
-
                 draw.text(
                     (50, y),
                     line,
                     fill=(0, 0, 0),
                     font=f_text
                 )
-
                 y += 28
 
             pages.append(img)
@@ -254,11 +222,9 @@ def clean_url(u):
 
 def get_yt_id(u):
     m = re.search(
-        r"(?:v=|be/|shorts/|embed/)"
-        r"([A-Za-z0-9_-]{11})",
+        r"(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})",
         u
     )
-
     return m.group(1) if m else None
 
 
@@ -278,26 +244,21 @@ def is_link(t):
 
 
 def download_video(url, audio_only=False):
-
     url = clean_url(url)
-
     vid = get_yt_id(url) or "video"
 
     for api in [
         "https://api.cobalt.tools/api/json",
         "https://co.wuk.sh/api/json"
     ]:
-
         try:
-
             r = requests.post(
                 api,
                 json={
                     "url": url,
                     "vCodec": "h264",
                     "vQuality": "720",
-                    "aFormat": "mp3"
-                    if audio_only else "best",
+                    "aFormat": "mp3" if audio_only else "best",
                     "isAudioOnly": audio_only
                 },
                 headers={
@@ -308,11 +269,9 @@ def download_video(url, audio_only=False):
             )
 
             if r.status_code == 200:
-
                 dl = r.json().get("url")
 
                 if dl:
-
                     fname = (
                         f"/tmp/{vid}_audio.mp3"
                         if audio_only
@@ -324,18 +283,13 @@ def download_video(url, audio_only=False):
                         stream=True,
                         timeout=120
                     ) as rr:
-
                         with open(fname, "wb") as f:
-
-                            for c in rr.iter_content(
-                                1024 * 1024
-                            ):
-
+                            for c in rr.iter_content(1024 * 1024):
                                 if c:
                                     f.write(c)
 
-                    if os.path.getsize(fname) > 50000:
-                        return fname, "Video", 0
+                    if os.path.exists(fname) and os.path.getsize(fname) > 50000:
+                        return fname, "Audio" if audio_only else "Video", 0
 
         except Exception:
             continue
@@ -348,9 +302,7 @@ def download_video(url, audio_only=False):
 # =========================================================
 
 def load_vmess():
-
     try:
-
         env = os.getenv("VMESS_DATA")
 
         if env:
@@ -361,9 +313,7 @@ def load_vmess():
             ]
 
         if os.path.exists("vmess.txt"):
-
             with open("vmess.txt", "r") as f:
-
                 return [
                     l.strip()
                     for l in f
@@ -377,16 +327,12 @@ def load_vmess():
 
 
 def get_random_vmess(n=5):
-
     a = load_vmess()
 
     if not a:
         return None
 
-    return random.sample(
-        a,
-        min(n, len(a))
-    )
+    return random.sample(a, min(n, len(a)))
 
 
 # =========================================================
@@ -394,13 +340,11 @@ def get_random_vmess(n=5):
 # =========================================================
 
 def get_host_info(host):
-
     info = {}
 
     try:
         ip = socket.gethostbyname(host)
         info["ip"] = ip
-
     except Exception as e:
         info["error"] = str(e)
 
@@ -408,7 +352,6 @@ def get_host_info(host):
 
 
 def check_port_200(host, ip, port):
-
     result = {
         "port": port,
         "open": False,
@@ -418,75 +361,45 @@ def check_port_200(host, ip, port):
     }
 
     try:
-
-        s = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_STREAM
-        )
-
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(2)
 
-        if s.connect_ex(
-            (ip, int(port))
-        ) != 0:
-
+        if s.connect_ex((ip, int(port))) != 0:
             s.close()
             return result
 
         s.close()
-
         result["open"] = True
 
     except Exception:
         return result
 
     try:
-
         for u in [
             f"http://{host}:{port}",
             f"https://{host}:{port}"
         ]:
-
             try:
-
                 r = requests.get(
                     u,
                     timeout=4,
                     verify=False,
-                    headers={
-                        "User-Agent": "Mozilla/5.0"
-                    }
+                    headers={"User-Agent": "Mozilla/5.0"}
                 )
 
                 result["code"] = r.status_code
 
                 if r.status_code == 200:
-
                     result["status"] = "200 OK"
                     result["is_200"] = True
 
-                elif r.status_code in [
-                    301,
-                    302,
-                    403,
-                    401
-                ]:
-
-                    result["status"] = (
-                        f"{r.status_code} - VIVANT"
-                    )
-
+                elif r.status_code in [301, 302, 403, 401]:
+                    result["status"] = f"{r.status_code} - VIVANT"
                     result["is_200"] = True
 
                 else:
-
-                    result["status"] = (
-                        f"{r.status_code}"
-                    )
-
-                    result["is_200"] = (
-                        r.status_code < 500
-                    )
+                    result["status"] = f"{r.status_code}"
+                    result["is_200"] = r.status_code < 500
 
                 break
 
@@ -507,7 +420,6 @@ def check_port_200(host, ip, port):
 # =========================================================
 
 def get_todays_fixtures():
-
     fallback = [
         "Man United vs Man City",
         "Levante vs Barcelona",
@@ -515,19 +427,14 @@ def get_todays_fixtures():
     ]
 
     try:
-
         key = os.getenv("API_FOOTBALL_KEY")
 
         if not key:
             return fallback
 
-        headers = {
-            "x-apisports-key": key
-        }
+        headers = {"x-apisports-key": key}
 
-        today = datetime.datetime.now().strftime(
-            "%Y-%m-%d"
-        )
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
 
         resp = requests.get(
             "https://v3.football.api-sports.io/fixtures",
@@ -537,27 +444,17 @@ def get_todays_fixtures():
         )
 
         data = resp.json()
-
         fixtures = data.get("response", [])
 
         big = []
 
         for f in fixtures:
-
             league_id = (
                 f.get("league", {})
                 .get("id", 0)
             )
 
-            if league_id not in [
-                39,
-                140,
-                135,
-                78,
-                61,
-                2,
-                3
-            ]:
+            if league_id not in [39, 140, 135, 78, 61, 2, 3]:
                 continue
 
             home = (
@@ -573,59 +470,63 @@ def get_todays_fixtures():
             )
 
             if home and away:
+                big.append(f"{home} vs {away}")
 
-                big.append(
-                    f"{home} vs {away}"
-                )
+        return big[:8] if len(big) >= 2 else fallback
 
-        return (
-            big[:8]
-            if len(big) >= 2
-            else fallback
-        )
-
-    except Exception:
+    except Exception as e:
+        print("FIXTURES ERROR:", e)
         return fallback
 
 
 # =========================================================
-# ⭐ EXACT SCORE - CORRIGÉ
+# EXACT SCORE - CORRIGÉ
 # =========================================================
 
 def predict_exact_score(match):
+    match = match.strip()
+
+    if not match:
+        return (
+            "⚽ Aucun match indiqué.\n"
+            "Utilise : /exact Real Madrid vs Olympique"
+        )
 
     if not groq_client:
-
         return (
-            f"⚽ {match}\n\n"
-            f"🎯 Score exact estimé : 2-1\n"
-            f"📊 Confiance estimative : 62%\n\n"
-            f"⚠️ Prédiction et non garantie."
+            f"⚽ MATCH\n{match}\n\n"
+            f"🎯 SCORE EXACT PRÉDIT\n2-1\n\n"
+            f"🏆 RÉSULTAT PRÉDIT\nVictoire de l'équipe à domicile\n\n"
+            f"📊 OVER / UNDER 2.5\nOver 2.5\n\n"
+            f"🤝 BTTS\nOui\n\n"
+            f"📈 CONFIANCE ESTIMATIVE\n62%\n\n"
+            f"⚠️ Prédiction automatique, pas une garantie."
         )
 
     try:
-
         prompt = f"""
-Tu es un analyste de football.
+Tu dois analyser un match de football demandé par l'utilisateur.
 
-Match demandé :
+MATCH :
 {match}
 
-Fais une analyse et donne une prédiction de score.
+Il s'agit d'une DEMANDE DE PRÉDICTION de football/EA FC 26.
+Ne donne pas le résultat réel d'un match passé ou en cours.
+Donne uniquement une estimation.
 
-Réponds exactement avec cette structure :
+Réponds en français avec cette structure :
 
 ⚽ MATCH
 {match}
 
 🎯 SCORE EXACT PRÉDIT
-[score]
+[exemple : 2-1]
 
 🏆 RÉSULTAT PRÉDIT
-[équipe gagnante, nul ou résultat]
+[victoire domicile / match nul / victoire extérieur]
 
 📊 OVER / UNDER 2.5
-[réponse]
+[Over 2.5 ou Under 2.5]
 
 🤝 BTTS
 [Oui ou Non]
@@ -636,10 +537,10 @@ Réponds exactement avec cette structure :
 📝 ANALYSE
 [analyse courte]
 
-IMPORTANT :
-- Il s'agit d'une prédiction.
-- Ne présente pas le score comme un résultat réel.
-- N'invente pas de score déjà joué.
+Règles :
+- C'est une prédiction, pas un résultat réel.
+- Ne prétends pas connaître le score réel.
+- Si le nom d'une équipe est ambigu, conserve exactement le nom fourni.
 - Réponds uniquement en français.
 """
 
@@ -649,8 +550,8 @@ IMPORTANT :
                 {
                     "role": "system",
                     "content": (
-                        "Tu es un assistant spécialisé "
-                        "dans l'analyse football."
+                        "Tu es un assistant spécialisé en "
+                        "analyse et prédiction de football."
                     )
                 },
                 {
@@ -665,22 +566,18 @@ IMPORTANT :
         result = comp.choices[0].message.content
 
         if not result:
-            raise Exception(
-                "Réponse Groq vide"
-            )
+            raise Exception("Réponse Groq vide")
 
-        return result
+        return result.strip()
 
     except Exception as e:
-
         print("EXACT ERROR:", e)
 
         return (
-            f"⚽ {match}\n\n"
-            f"🎯 SCORE EXACT PRÉDIT : 2-1\n"
-            f"📊 CONFIANCE ESTIMATIVE : 62%\n\n"
-            f"⚠️ Prédiction automatique, "
-            f"pas une garantie."
+            f"⚽ MATCH\n{match}\n\n"
+            f"🎯 SCORE EXACT PRÉDIT\n2-1\n\n"
+            f"📈 CONFIANCE ESTIMATIVE\n62%\n\n"
+            f"⚠️ Prédiction automatique, pas une garantie."
         )
 
 
@@ -689,7 +586,6 @@ IMPORTANT :
 # =========================================================
 
 def create_score_image(t):
-
     lines = [
         l for l in t.split("\n")
         if "vs" in l.lower()
@@ -703,30 +599,20 @@ def create_score_image(t):
     W = 950
     H = 140 + len(lines) * 65
 
-    img = Image.new(
-        "RGB",
-        (W, H),
-        (15, 23, 42)
-    )
-
+    img = Image.new("RGB", (W, H), (15, 23, 42))
     draw = ImageDraw.Draw(img)
 
     try:
-
         f1 = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/"
-            "DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             32
         )
 
         f2 = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/"
-            "DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             20
         )
-
     except Exception:
-
         f1 = f2 = ImageFont.load_default()
 
     draw.text(
@@ -739,11 +625,7 @@ def create_score_image(t):
     y = 110
 
     for line in lines:
-
-        m = re.search(
-            r"(\d+)\s*-\s*(\d+)",
-            line
-        )
+        m = re.search(r"(\d+)\s*-\s*(\d+)", line)
 
         if not m:
             continue
@@ -751,10 +633,7 @@ def create_score_image(t):
         s1 = int(m.group(1))
         s2 = int(m.group(2))
 
-        teams = (
-            line.split("=>")[0]
-            .strip()[:48]
-        )
+        teams = line.split("=>")[0].strip()[:48]
 
         draw.text(
             (30, y),
@@ -773,9 +652,7 @@ def create_score_image(t):
         y += 60
 
     p = "/tmp/scores.png"
-
     img.save(p)
-
     return p
 
 
@@ -784,10 +661,7 @@ def create_score_image(t):
 # =========================================================
 
 async def start(update, context):
-
-    save_user(
-        update.effective_user.id
-    )
+    save_user(update.effective_user.id)
 
     await update.message.reply_text(
         to_3d(
@@ -808,10 +682,7 @@ async def start(update, context):
 # =========================================================
 
 async def stats_cmd(update, context):
-
-    save_user(
-        update.effective_user.id
-    )
+    save_user(update.effective_user.id)
 
     await update.message.reply_text(
         f"Total: {get_total_users()}\n"
@@ -824,19 +695,12 @@ async def stats_cmd(update, context):
 # =========================================================
 
 async def vmess_cmd(update, context):
-
-    save_user(
-        update.effective_user.id
-    )
+    save_user(update.effective_user.id)
 
     s = get_random_vmess(5)
 
     if not s:
-
-        await update.message.reply_text(
-            "Aucun serveur"
-        )
-
+        await update.message.reply_text("Aucun serveur")
         return
 
     await update.message.reply_text(
@@ -851,18 +715,13 @@ async def vmess_cmd(update, context):
 # =========================================================
 
 async def pdf_cmd(update, context):
-
-    save_user(
-        update.effective_user.id
-    )
+    save_user(update.effective_user.id)
 
     if not context.args:
-
         await update.message.reply_text(
             "📚 /pdf + sujet\n"
             "Ex: /pdf guide business"
         )
-
         return
 
     sujet = " ".join(context.args)
@@ -872,17 +731,13 @@ async def pdf_cmd(update, context):
     )
 
     try:
-
         if not groq_client:
-            raise Exception(
-                "GROQ_API_KEY manquante"
-            )
+            raise Exception("GROQ_API_KEY manquante")
 
         prompt = (
-            f"Ecris un livre complet en francais "
-            f"sur: {sujet}. "
-            f"5 chapitres, intro, conclusion, "
-            f"conseils. 1500 mots minimum."
+            f"Ecris un livre complet en francais sur: {sujet}. "
+            f"5 chapitres, intro, conclusion, conseils. "
+            f"1500 mots minimum."
         )
 
         comp = groq_client.chat.completions.create(
@@ -899,7 +754,7 @@ async def pdf_cmd(update, context):
 
         contenu = comp.choices[0].message.content
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         pdf_path = await loop.run_in_executor(
             None,
@@ -909,9 +764,7 @@ async def pdf_cmd(update, context):
         )
 
         if pdf_path and os.path.exists(pdf_path):
-
             with open(pdf_path, "rb") as f:
-
                 await context.bot.send_document(
                     update.effective_chat.id,
                     document=f,
@@ -925,13 +778,11 @@ async def pdf_cmd(update, context):
             os.remove(pdf_path)
 
         else:
-
             await update.message.reply_text(
                 contenu[:4000]
             )
 
     except Exception as e:
-
         await update.message.reply_text(
             f"Erreur PDF: {e}"
         )
@@ -942,17 +793,12 @@ async def pdf_cmd(update, context):
 # =========================================================
 
 async def mtr_cmd(update, context):
-
-    save_user(
-        update.effective_user.id
-    )
+    save_user(update.effective_user.id)
 
     if not context.args:
-
         await update.message.reply_text(
             "📡 /mtr 1.1.1.1 8.8.8.8"
         )
-
         return
 
     raw = " ".join(context.args)
@@ -965,27 +811,49 @@ async def mtr_cmd(update, context):
     ips = list(dict.fromkeys(ips))
 
     if not ips:
-
-        await update.message.reply_text(
-            "Aucune IP"
-        )
-
+        await update.message.reply_text("Aucune IP")
         return
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     await update.message.reply_text(
         f"Scan {len(ips)} HOSTS..."
     )
 
-    txt = (
-        f"SCAN MTR {len(ips)} HOSTS\n"
-    )
+    txt = f"SCAN MTR {len(ips)} HOSTS\n"
 
     for ip in ips[:15]:
-
         r = await loop.run_in_executor(
             None,
             check_port_200,
             ip,
             ip,
+            80
+        )
+
+        txt += (
+            f"{'OK' if r['is_200'] else 'KO'} "
+            f"{ip}: {r['status']}\n"
+        )
+
+    txt += f"\n{SIGNATURE}"
+
+    await update.message.reply_text(txt)
+
+
+# =========================================================
+# /SCAN
+# =========================================================
+
+async def scan_cmd(update, context):
+    save_user(update.effective_user.id)
+
+    if not context.args:
+        await update.message.reply_text("🔍 /scan host")
+        return
+
+    host = (
+        context.args[0]
+        .replace("http://", "")
+        .replace("https://", "")
+      
