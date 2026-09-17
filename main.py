@@ -423,10 +423,25 @@ def decrypt_dark_tunnel_file(path):
     raw = Path(path).read_bytes()
     candidates = [raw]
 
+    # Dark Tunnel peut utiliser un schéma Unicode stylisé, par ex.
+    # "𝒗𝒑𝒏𝒑𝒍𝒖𝒔://<base64url>".
+    # On normalise Unicode puis on retire le schéma avant le décodage.
     try:
-        decoded = _b64decode_loose(raw)
-        if decoded and decoded != raw:
-            candidates.append(decoded)
+        raw_text = raw.decode("utf-8").strip()
+        normalized = unicodedata.normalize("NFKC", raw_text)
+        if "://" in normalized:
+            scheme, payload = normalized.split("://", 1)
+            if payload:
+                try:
+                    decoded = _b64decode_loose(payload)
+                    if decoded:
+                        candidates.append(decoded)
+                except Exception:
+                    pass
+        else:
+            decoded = _b64decode_loose(normalized)
+            if decoded and decoded != raw:
+                candidates.append(decoded)
     except Exception:
         pass
 
