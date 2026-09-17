@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile
+import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile, unicodedata
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -357,6 +357,13 @@ async def today_cmd(update,context):
         await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
 
+def _normalize_filename(name):
+    """Normalise les extensions Unicode stylisées (ex. 𝒑𝒍𝒖𝒔 -> plus)."""
+    try:
+        return unicodedata.normalize("NFKC", name)
+    except Exception:
+        return name
+
 def _try_json_bytes(data):
     try:
         return json.loads(data.decode("utf-8"))
@@ -371,7 +378,7 @@ def _b64decode_loose(value):
     return base64.b64decode(value, validate=False)
 
 def _walk_config(obj, result=None):
-    """Extract common connection fields without guessing encrypted values."""
+    """Extrait les champs réseau visibles sans deviner les valeurs chiffrées."""
     if result is None:
         result = {}
 
@@ -398,7 +405,7 @@ def _walk_config(obj, result=None):
                     result["network"] = s
                 elif kl in {"security", "tls"} and "security" not in result:
                     result["security"] = s
-            else:
+            elif isinstance(v, (dict, list)):
                 _walk_config(v, result)
     elif isinstance(obj, list):
         for item in obj:
@@ -408,15 +415,13 @@ def _walk_config(obj, result=None):
 
 def decrypt_dark_tunnel_file(path):
     """
-    Safe parser for Dark Tunnel-like .plus files.
-
-    It decodes the publicly visible/base64 JSON layer and recursively inspects
-    JSON structures. It does NOT guess or brute-force encryption keys.
+    Parse la couche externe/base64/JSON d'un fichier Dark Tunnel-like.
+    Les champs qui restent cryptographiques sont signalés, sans
+    brute-force de clé.
     """
     raw = Path(path).read_bytes()
     candidates = [raw]
 
-    # Try direct Base64 if the file looks textual.
     try:
         decoded = _b64decode_loose(raw)
         if decoded and decoded != raw:
@@ -432,20 +437,28 @@ def decrypt_dark_tunnel_file(path):
         if obj is not None:
             configs.append(obj)
 
-    # Also inspect JSON strings that themselves contain base64 JSON.
+    # Inspecte récursivement les chaînes Base64 contenant éventuellement
+    # une autre couche JSON.
+    seen = set()
     changed = True
     while changed:
         changed = False
-        for obj in list(configs):
+        snapshot = list(configs)
+        for obj in snapshot:
+            oid = id(obj)
+            if oid in seen:
+                continue
+            seen.add(oid)
+
             stack = [obj]
             while stack:
                 cur = stack.pop()
                 if isinstance(cur, dict):
                     for k, v in cur.items():
+                        kl = str(k).lower()
                         if isinstance(v, str):
-                            kl = str(k).lower()
                             if "encrypt" in kl or "locked" in kl or "cipher" in kl:
-                                encrypted.append({"field": k, "length": len(v)})
+                                encrypted.append({"field": str(k), "length": len(v)})
                             if len(v) > 40 and re.fullmatch(r"[A-Za-z0-9+/=_-]+", v):
                                 try:
                                     d = _b64decode_loose(v)
@@ -474,12 +487,24 @@ async def handle_dark_tunnel(update, context):
     if not document:
         return
 
-    name = document.file_name or "config.plus"
-    if not name.lower().endswith((".plus", ".ehi", ".hc", ".hci")):
-        await update.message.reply_text("❌ Format non reconnu. Envoie un fichier .plus/.ehi/.hc/.hci")
+    original_name = document.file_name or "config.plus"
+    name = _normalize_filename(original_name)
+    lower_name = name.lower()
+
+    # Accepte les extensions normales ET leurs variantes Unicode stylisées.
+    if not lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark")):
+        await update.message.reply_text(
+            f"❌ Format non reconnu : {original_name}\n"
+            "Formats acceptés : .plus, .𝒑𝒍𝒖𝒔, .ehi, .hc, .hci, .dark"
+        )
         return
 
-    path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.getpid()}_{name}")
+    safe_name = os.path.basename(name)
+    path = os.path.join(
+        tempfile.gettempdir(),
+        f"dt_{update.effective_user.id}_{os.getpid()}_{safe_name}"
+    )
+
     try:
         await update.message.reply_text("🔐 Analyse de la configuration...")
         tg_file = await document.get_file()
@@ -501,8 +526,13 @@ async def handle_dark_tunnel(update, context):
             ("security", "Security"),
         ]
 
-        lines = ["🔐 DARK TUNNEL — ANALYSE", ""]
+        lines = [
+            "🔐 DARK TUNNEL — ANALYSE",
+            f"📄 Fichier : {original_name}",
+            ""
+        ]
         shown = False
+
         for key, label in labels:
             if cfg.get(key) not in (None, ""):
                 lines.append(f"{label} : {cfg[key]}")
@@ -511,18 +541,26 @@ async def handle_dark_tunnel(update, context):
         if not shown:
             lines.append("ℹ️ Aucun paramètre réseau lisible dans la couche décodée.")
 
-        if cfg.get("_encrypted_fields"):
+        encrypted_fields = cfg.get("_encrypted_fields", [])
+        if encrypted_fields:
             lines += [
                 "",
                 "🔒 Champs encore chiffrés :",
-                ", ".join(str(x["field"]) for x in cfg["_encrypted_fields"])
+                ", ".join(str(x["field"]) for x in encrypted_fields)
             ]
 
-        lines += ["", f"Couches JSON décodées : {cfg.get('_decoded_layers', 0)}", SIGNATURE]
+        lines += [
+            "",
+            f"Couches JSON décodées : {cfg.get('_decoded_layers', 0)}",
+            SIGNATURE
+        ]
+
         await update.message.reply_text("\n".join(lines)[:4000])
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur d'analyse : {str(e)[:800]}")
+        await update.message.reply_text(
+            f"❌ Erreur d'analyse : {str(e)[:800]}"
+        )
     finally:
         try:
             if os.path.exists(path):
