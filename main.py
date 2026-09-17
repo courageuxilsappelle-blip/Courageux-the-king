@@ -511,4 +511,118 @@ async def handle_dark_tunnel(update, context):
         if not shown:
             lines.append("ℹ️ Aucun paramètre réseau lisible dans la couche décodée.")
 
-        if cfg.get("_en
+        if cfg.get("_encrypted_fields"):
+            lines += [
+                "",
+                "🔒 Champs encore chiffrés :",
+                ", ".join(str(x["field"]) for x in cfg["_encrypted_fields"])
+            ]
+
+        lines += ["", f"Couches JSON décodées : {cfg.get('_decoded_layers', 0)}", SIGNATURE]
+        await update.message.reply_text("\n".join(lines)[:4000])
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erreur d'analyse : {str(e)[:800]}")
+    finally:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+async def handle_download(update,context,audio_only=False):
+    save_user(update.effective_user.id)
+    raw = update.message.text or ""
+    m = re.search(r'https?://\S+', raw)
+    url = clean_url(m.group(0) if m else (context.args[0] if context.args else ""))
+    if not url:
+        return
+    await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
+    await update.message.reply_text(to_3d("Telechargement..."))
+    loop = asyncio.get_event_loop()
+    fp,t,_ = await loop.run_in_executor(None,download_video,url,audio_only)
+    if fp and os.path.exists(fp):
+        try:
+            with open(fp,'rb') as f:
+                if audio_only:
+                    await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"))
+                else:
+                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"),supports_streaming=True)
+            os.remove(fp)
+        except Exception as e:
+            await update.message.reply_text(to_3d(f"{e}"))
+    else:
+        await update.message.reply_text(to_3d(f"{t}"))
+
+async def handle_photo(update,context):
+    save_user(update.effective_user.id)
+    cap = update.message.caption or "C est quel modele?"
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    try:
+        pf = await update.message.photo[-1].get_file()
+        fp = "/tmp/analyse.jpg"
+        await pf.download_to_drive(fp)
+        with open(fp,"rb") as f:
+            b64 = base64.b64encode(f.read()).decode('utf-8')
+        if groq_client:
+            comp = groq_client.chat.completions.create(model="qwen/qwen3.6-27b",messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],temperature=0.0,max_tokens=300)
+            rep = comp.choices[0].message.content
+            await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+        else:
+            await update.message.reply_text("GROQ manquant")
+    except Exception as e:
+        await update.message.reply_text(f"{str(e)[:500]}\n\n{SIGNATURE}")
+
+async def mp3_cmd(update,context):
+    await handle_download(update,context,True)
+
+async def chat_gpt(update,context):
+    save_user(update.effective_user.id)
+    txt = update.message.text or ""
+    low = txt.lower()
+    if is_link(txt):
+        await handle_download(update,context,False)
+        return
+    if "pdf" in low or "livre" in low:
+        if len(txt.split()) > 1:
+            context.args = txt.replace("/pdf","").replace("livre","").split()
+            await pdf_cmd(update,context)
+            return
+    uid = update.effective_user.id
+    if uid not in conversations:
+        conversations[uid] = []
+    conversations[uid].append({"role":"user","content":txt})
+    try:
+        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement. Tu peux creer des PDF avec /pdf."
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
+        rep = comp.choices[0].message.content
+    except:
+        rep = f"Bien recu: {txt}. Tape /start"
+    conversations[uid].append({"role":"assistant","content":rep})
+    await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
+
+def main():
+    print("Building V25.3 FULL...")
+    app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("vmess", vmess_cmd))
+    app.add_handler(CommandHandler("v2ray", vmess_cmd))
+    app.add_handler(CommandHandler("scan", scan_cmd))
+    app.add_handler(CommandHandler("trace", scan_cmd))
+    app.add_handler(CommandHandler("scan200", scan200_cmd))
+    app.add_handler(CommandHandler("mtr", mtr_cmd))
+    app.add_handler(CommandHandler("pdf", pdf_cmd))
+    app.add_handler(CommandHandler("mp3", mp3_cmd))
+    app.add_handler(CommandHandler("exact", exact_cmd))
+    app.add_handler(CommandHandler("today", today_cmd))
+    app.add_handler(CommandHandler("tous", today_cmd))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
+    print("V25.3 GO...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+    
