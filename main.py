@@ -1,4 +1,4 @@
-import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap
+import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -356,98 +356,159 @@ async def today_cmd(update,context):
     except:
         await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
-async def handle_download(update,context,audio_only=False):
-    save_user(update.effective_user.id)
-    raw = update.message.text or ""
-    m = re.search(r'https?://\S+', raw)
-    url = clean_url(m.group(0) if m else (context.args[0] if context.args else ""))
-    if not url:
-        return
-    await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
-    await update.message.reply_text(to_3d("Telechargement..."))
-    loop = asyncio.get_event_loop()
-    fp,t,_ = await loop.run_in_executor(None,download_video,url,audio_only)
-    if fp and os.path.exists(fp):
-        try:
-            with open(fp,'rb') as f:
-                if audio_only:
-                    await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"))
-                else:
-                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"),supports_streaming=True)
-            os.remove(fp)
-        except Exception as e:
-            await update.message.reply_text(to_3d(f"{e}"))
-    else:
-        await update.message.reply_text(to_3d(f"{t}"))
 
-async def handle_photo(update,context):
-    save_user(update.effective_user.id)
-    cap = update.message.caption or "C est quel modele?"
-    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+def _try_json_bytes(data):
     try:
-        pf = await update.message.photo[-1].get_file()
-        fp = "/tmp/analyse.jpg"
-        await pf.download_to_drive(fp)
-        with open(fp,"rb") as f:
-            b64 = base64.b64encode(f.read()).decode('utf-8')
-        if groq_client:
-            comp = groq_client.chat.completions.create(model="qwen/qwen3.6-27b",messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],temperature=0.0,max_tokens=300)
-            rep = comp.choices[0].message.content
-            await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
-        else:
-            await update.message.reply_text("GROQ manquant")
-    except Exception as e:
-        await update.message.reply_text(f"{str(e)[:500]}\n\n{SIGNATURE}")
+        return json.loads(data.decode("utf-8"))
+    except Exception:
+        return None
 
-async def mp3_cmd(update,context):
-    await handle_download(update,context,True)
+def _b64decode_loose(value):
+    if isinstance(value, str):
+        value = value.encode()
+    value = b"".join(value.split())
+    value += b"=" * (-len(value) % 4)
+    return base64.b64decode(value, validate=False)
 
-async def chat_gpt(update,context):
-    save_user(update.effective_user.id)
-    txt = update.message.text or ""
-    low = txt.lower()
-    if is_link(txt):
-        await handle_download(update,context,False)
-        return
-    if "pdf" in low or "livre" in low:
-        if len(txt.split()) > 1:
-            context.args = txt.replace("/pdf","").replace("livre","").split()
-            await pdf_cmd(update,context)
-            return
-    uid = update.effective_user.id
-    if uid not in conversations:
-        conversations[uid] = []
-    conversations[uid].append({"role":"user","content":txt})
+def _walk_config(obj, result=None):
+    """Extract common connection fields without guessing encrypted values."""
+    if result is None:
+        result = {}
+
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            kl = str(k).lower()
+            if isinstance(v, (str, int, float, bool)):
+                s = str(v)
+                if kl in {"uuid", "user_id", "userid"} and "uuid" not in result:
+                    result["uuid"] = s
+                elif kl in {"sni", "servername", "server_name"} and "sni" not in result:
+                    result["sni"] = s
+                elif kl in {"host", "ws_host", "wshost"} and "host" not in result:
+                    result["host"] = s
+                elif kl in {"address", "server", "host_address", "server_address"} and "address" not in result:
+                    result["address"] = s
+                elif kl in {"port", "server_port", "port_number"} and "port" not in result:
+                    result["port"] = s
+                elif kl in {"path", "ws_path", "websocket_path"} and "path" not in result:
+                    result["path"] = s
+                elif kl in {"protocol", "type"} and "protocol" not in result:
+                    result["protocol"] = s
+                elif kl in {"network", "transport", "transportnetwork"} and "network" not in result:
+                    result["network"] = s
+                elif kl in {"security", "tls"} and "security" not in result:
+                    result["security"] = s
+            else:
+                _walk_config(v, result)
+    elif isinstance(obj, list):
+        for item in obj:
+            _walk_config(item, result)
+
+    return result
+
+def decrypt_dark_tunnel_file(path):
+    """
+    Safe parser for Dark Tunnel-like .plus files.
+
+    It decodes the publicly visible/base64 JSON layer and recursively inspects
+    JSON structures. It does NOT guess or brute-force encryption keys.
+    """
+    raw = Path(path).read_bytes()
+    candidates = [raw]
+
+    # Try direct Base64 if the file looks textual.
     try:
-        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement. Tu peux creer des PDF avec /pdf."
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
-        rep = comp.choices[0].message.content
-    except:
-        rep = f"Bien recu: {txt}. Tape /start"
-    conversations[uid].append({"role":"assistant","content":rep})
-    await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
+        decoded = _b64decode_loose(raw)
+        if decoded and decoded != raw:
+            candidates.append(decoded)
+    except Exception:
+        pass
 
-def main():
-    print("Building V25.3 FULL...")
-    app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("vmess", vmess_cmd))
-    app.add_handler(CommandHandler("v2ray", vmess_cmd))
-    app.add_handler(CommandHandler("scan", scan_cmd))
-    app.add_handler(CommandHandler("trace", scan_cmd))
-    app.add_handler(CommandHandler("scan200", scan200_cmd))
-    app.add_handler(CommandHandler("mtr", mtr_cmd))
-    app.add_handler(CommandHandler("pdf", pdf_cmd))
-    app.add_handler(CommandHandler("mp3", mp3_cmd))
-    app.add_handler(CommandHandler("exact", exact_cmd))
-    app.add_handler(CommandHandler("today", today_cmd))
-    app.add_handler(CommandHandler("tous", today_cmd))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.3 GO...")
-    app.run_polling()
+    configs = []
+    encrypted = []
 
-if __name__ == "__main__":
-    main()
-    
+    for data in candidates:
+        obj = _try_json_bytes(data)
+        if obj is not None:
+            configs.append(obj)
+
+    # Also inspect JSON strings that themselves contain base64 JSON.
+    changed = True
+    while changed:
+        changed = False
+        for obj in list(configs):
+            stack = [obj]
+            while stack:
+                cur = stack.pop()
+                if isinstance(cur, dict):
+                    for k, v in cur.items():
+                        if isinstance(v, str):
+                            kl = str(k).lower()
+                            if "encrypt" in kl or "locked" in kl or "cipher" in kl:
+                                encrypted.append({"field": k, "length": len(v)})
+                            if len(v) > 40 and re.fullmatch(r"[A-Za-z0-9+/=_-]+", v):
+                                try:
+                                    d = _b64decode_loose(v)
+                                    nested = _try_json_bytes(d)
+                                    if nested is not None:
+                                        configs.append(nested)
+                                        changed = True
+                                except Exception:
+                                    pass
+                        elif isinstance(v, (dict, list)):
+                            stack.append(v)
+                elif isinstance(cur, list):
+                    stack.extend(x for x in cur if isinstance(x, (dict, list)))
+
+    result = {}
+    for cfg in configs:
+        _walk_config(cfg, result)
+
+    result["_encrypted_fields"] = encrypted
+    result["_decoded_layers"] = len(configs)
+    return result
+
+async def handle_dark_tunnel(update, context):
+    save_user(update.effective_user.id)
+    document = update.message.document
+    if not document:
+        return
+
+    name = document.file_name or "config.plus"
+    if not name.lower().endswith((".plus", ".ehi", ".hc", ".hci")):
+        await update.message.reply_text("❌ Format non reconnu. Envoie un fichier .plus/.ehi/.hc/.hci")
+        return
+
+    path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.getpid()}_{name}")
+    try:
+        await update.message.reply_text("🔐 Analyse de la configuration...")
+        tg_file = await document.get_file()
+        await tg_file.download_to_drive(path)
+
+        cfg = await asyncio.get_running_loop().run_in_executor(
+            None, decrypt_dark_tunnel_file, path
+        )
+
+        labels = [
+            ("protocol", "Protocol"),
+            ("address", "Address"),
+            ("port", "Port"),
+            ("uuid", "UUID"),
+            ("sni", "SNI"),
+            ("host", "WS Host"),
+            ("path", "WS Path"),
+            ("network", "Transport"),
+            ("security", "Security"),
+        ]
+
+        lines = ["🔐 DARK TUNNEL — ANALYSE", ""]
+        shown = False
+        for key, label in labels:
+            if cfg.get(key) not in (None, ""):
+                lines.append(f"{label} : {cfg[key]}")
+                shown = True
+
+        if not shown:
+            lines.append("ℹ️ Aucun paramètre réseau lisible dans la couche décodée.")
+
+        if cfg.get("_en
