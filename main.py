@@ -458,7 +458,7 @@ async def handle_ehi_file(update, context, path, original_name):
             f"📦 Taille : {info['size']} octets",
             f"🔖 Signature : {info['signature'] or 'EHI binaire'}",
             f"📱 Version : {info['version'] or 'non détectée'}",
-        f"🧩 En-tête : {Path(path).read_bytes()[:24].hex(" ")}",
+        f"🧩 En-tête : {Path(path).read_bytes()[:24].hex(' ')}",
             "",
             "🖥️ SERVEURS / HOSTS",
         ]
