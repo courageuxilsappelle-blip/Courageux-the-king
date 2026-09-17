@@ -395,7 +395,7 @@ def analyze_ehi_file(path):
     raw = Path(path).read_bytes()
     result = {
         "size": len(raw),
-        "signature": "EHI" if b"ehi" in raw[:32].lower() else None,
+        "signature": "EHI" if len(raw) >= 5 and raw[2:5].lower() == b"ehi" else None,
         "version": None,
         "hosts": [],
         "ips": [],
@@ -430,7 +430,7 @@ def analyze_ehi_file(path):
 
     # Domaines : évite de classer les noms de fichiers comme hosts.
     domains = re.findall(
-        r"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?![A-Za-z0-9_-})",
+        r"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?![A-Za-z0-9_-])",
         blob, re.I
     )
     result["hosts"] = sorted(set(domains))
@@ -458,6 +458,7 @@ async def handle_ehi_file(update, context, path, original_name):
             f"📦 Taille : {info['size']} octets",
             f"🔖 Signature : {info['signature'] or 'EHI binaire'}",
             f"📱 Version : {info['version'] or 'non détectée'}",
+        f"🧩 En-tête : {Path(path).read_bytes()[:24].hex(" ")}",
             "",
             "🖥️ SERVEURS / HOSTS",
         ]
