@@ -1,10 +1,11 @@
-import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile, unicodedata
+import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile, unicodedata, subprocess
 from pathlib import Path
 from flask import Flask
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from PIL import Image, ImageDraw, ImageFont
 import urllib3
+import msgpack
 urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
@@ -22,7 +23,7 @@ SIGNATURE = "COURAGEUX THE KING"
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return f"Bot {SIGNATURE} V25.3 FULL LIVE"
+    return f"Bot {SIGNATURE} V25.5 DARK TUNNEL LIVE"
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
@@ -359,8 +360,15 @@ async def today_cmd(update,context):
 
 
 def _normalize_filename(name):
-    """Normalise les noms/extensions Unicode stylisés."""
-    return unicodedata.normalize("NFKC", name or "")
+    """Normalise les extensions Unicode stylisées (ex. 𝒑𝒍𝒖𝒔 -> plus)."""
+    try:
+        return unicodedata.normalize("NFKC", name or "")
+    except Exception:
+        return name or ""
+
+DT_KEY_256 = b"$B&E)H@McQfThWmZq4t7w!z%C*F-JaNd"
+DT_KEY_192 = b"F)J@NcRfUjXn2r4u7x!A%D*G"
+DT_IV = bytes.fromhex("232e39185523184a5723586242200e05")
 
 def _b64decode_loose(value):
     if isinstance(value, str):
@@ -370,119 +378,177 @@ def _b64decode_loose(value):
     value += b"=" * (-len(value) % 4)
     return base64.b64decode(value, validate=False)
 
-def _try_json_bytes(data):
+def _aes_cfb_decrypt(data, key):
+    """AES-CFB-128, avec PyCryptodome si disponible, sinon OpenSSL."""
     try:
-        return json.loads(data.decode("utf-8-sig"))
-    except Exception:
-        return None
-
-def _walk_config(obj, result=None):
-    if result is None:
-        result = {}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            kl = str(k).lower().replace("-", "_")
-            if isinstance(v, (str, int, float, bool)):
-                value = str(v)
-                aliases = {
-                    "uuid": "uuid", "id": "uuid", "userid": "uuid",
-                    "sni": "sni", "servername": "sni", "server_name": "sni",
-                    "host": "host", "wshost": "host", "ws_host": "host",
-                    "address": "address", "server": "address", "server_address": "address",
-                    "port": "port", "server_port": "port", "port_number": "port",
-                    "path": "path", "ws_path": "path", "websocket_path": "path",
-                    "protocol": "protocol", "type": "protocol",
-                    "network": "network", "transport": "network", "transportnetwork": "network",
-                    "security": "security", "tls": "security",
-                }
-                target = aliases.get(kl)
-                if target and target not in result:
-                    result[target] = value
-            elif isinstance(v, (dict, list)):
-                _walk_config(v, result)
-    elif isinstance(obj, list):
-        for item in obj:
-            _walk_config(item, result)
-    return result
-
-def decrypt_dark_tunnel_file(path):
-    """Décode la couche vpnplus:// Base64URL et inspecte le JSON résultant."""
-    raw = Path(path).read_bytes()
-    configs = []
-    encrypted = []
-    seen_json = set()
-
-    def add_candidate(data):
-        obj = _try_json_bytes(data)
-        if obj is not None:
-            marker = repr(obj)
-            if marker not in seen_json:
-                seen_json.add(marker)
-                configs.append(obj)
-                return True
-        return False
-
-    # 1) Fichier texte Dark Tunnel: vpnplus://<base64url>.
-    try:
-        txt = raw.decode("utf-8-sig", "ignore").strip()
-        txt_norm = unicodedata.normalize("NFKC", txt)
-        # On ne dépend pas du nom exact du schéma: tout ce qui précède :// est accepté.
-        if "://" in txt_norm:
-            payload = txt_norm.split("://", 1)[1].strip()
-            try:
-                add_candidate(_b64decode_loose(payload))
-            except Exception:
-                pass
-        else:
-            try:
-                add_candidate(_b64decode_loose(txt_norm))
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # 2) Fallback: certains fichiers ont des octets/entêtes avant le Base64.
-    if not configs:
-        for marker in (b"eyJ", b"eyJ0eXBlIjo"):
-            pos = raw.find(marker)
-            if pos >= 0:
-                tail = raw[pos:]
+        from Crypto.Cipher import AES
+        return AES.new(key, AES.MODE_CFB, iv=DT_IV, segment_size=128).decrypt(data)
+    except ImportError:
+        # Fallback utile sur les hébergeurs où pycryptodome n'est pas installé.
+        with tempfile.NamedTemporaryFile(delete=False) as fi, tempfile.NamedTemporaryFile(delete=False) as fo:
+            fi.write(data)
+            in_name, out_name = fi.name, fo.name
+        try:
+            bits = len(key) * 8
+            p = subprocess.run(
+                [
+                    "openssl", "enc", f"-aes-{bits}-cfb", "-d",
+                    "-K", key.hex(), "-iv", DT_IV.hex(),
+                    "-in", in_name, "-out", out_name
+                ],
+                capture_output=True, text=True, timeout=15
+            )
+            if p.returncode != 0:
+                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
+            return Path(out_name).read_bytes()
+        finally:
+            for f in (in_name, out_name):
                 try:
-                    add_candidate(_b64decode_loose(tail))
+                    os.remove(f)
                 except Exception:
                     pass
-                if configs:
-                    break
 
-    # 3) Explore les chaînes Base64 qui peuvent contenir une couche JSON suivante.
-    index = 0
-    while index < len(configs):
-        obj = configs[index]
-        index += 1
-        stack = [obj]
-        while stack:
-            cur = stack.pop()
-            if isinstance(cur, dict):
-                for k, v in cur.items():
-                    kl = str(k).lower()
-                    if isinstance(v, str):
-                        if any(x in kl for x in ("encrypt", "locked", "cipher")):
-                            encrypted.append({"field": str(k), "length": len(v)})
-                        if len(v) >= 40 and re.fullmatch(r"[A-Za-z0-9+/=_-]+", v):
-                            try:
-                                nested = _b64decode_loose(v)
-                                if _try_json_bytes(nested) is not None:
-                                    add_candidate(nested)
-                            except Exception:
-                                pass
-                    elif isinstance(v, (dict, list)):
-                        stack.append(v)
-            elif isinstance(cur, list):
-                stack.extend(x for x in cur if isinstance(x, (dict, list)))
+def _try_json_string(value):
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not ((stripped.startswith("{") and stripped.endswith("}")) or
+            (stripped.startswith("[") and stripped.endswith("]"))):
+        return value
+    try:
+        # Dark Tunnel utilise parfois des placeholders JSON non quotés:
+        # $MUX_ENABLED, $SOCKS5_LISTEN_PORT, etc.
+        fixed = re.sub(r'(:\s*)(\$[A-Za-z0-9_]+)', r'\1"\2"', stripped)
+        return _normalize_dark_json(json.loads(fixed))
+    except Exception:
+        return value
 
-    result = _walk_config(configs[0]) if configs else {}
-    result["_encrypted_fields"] = encrypted
-    result["_decoded_layers"] = len(configs)
+def _normalize_dark_json(value):
+    if isinstance(value, dict):
+        return {k: _normalize_dark_json(v) for k, v in value.items() if k != "Password"}
+    if isinstance(value, list):
+        return [_normalize_dark_json(v) for v in value]
+    if isinstance(value, bytes):
+        try:
+            return _try_json_string(value.decode("utf-8"))
+        except Exception:
+            return list(value)
+    if isinstance(value, str):
+        return _try_json_string(value)
+    return value
+
+def _decrypt_encrypted_fields(obj, key):
+    """Déchiffre récursivement les valeurs des clés commençant par Encrypted."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if isinstance(k, str) and k.startswith("Encrypted") and isinstance(v, (bytes, bytearray)):
+                try:
+                    result[k] = _aes_cfb_decrypt(bytes(v), key)
+                except Exception:
+                    result[k] = v
+            else:
+                result[k] = _decrypt_encrypted_fields(v, key)
+        return result
+    if isinstance(obj, list):
+        return [_decrypt_encrypted_fields(v, key) for v in obj]
+    return obj
+
+def _parse_msgpack(data):
+    return msgpack.unpackb(data, raw=False, strict_map_key=False)
+
+def decrypt_dark_tunnel_file(path):
+    """
+    Décode le format Dark Tunnel observé dans les fichiers .plus/.dark:
+      vpnplus:// + Base64URL(JSON)
+      -> AES-CFB-256
+      -> MessagePack
+      -> AES-CFB-192 sur EncryptedLockedConfig
+      -> déchiffrement récursif des champs Encrypted*
+    """
+    raw = Path(path).read_bytes()
+    txt = raw.decode("utf-8-sig", "ignore").strip()
+    txt = _normalize_filename(txt)
+
+    if "://" in txt:
+        payload = txt.split("://", 1)[1].strip()
+    else:
+        payload = txt
+
+    # Fallback pour d'éventuels préfixes avant eyJ...
+    if not payload.startswith(("eyJ", "ey")):
+        m = re.search(r"(eyJ[A-Za-z0-9_-]+)", payload)
+        if m:
+            payload = m.group(1)
+
+    outer = json.loads(_b64decode_loose(payload).decode("utf-8"))
+
+    if "encryptedLockedConfig" not in outer:
+        raise ValueError("Champ encryptedLockedConfig absent")
+
+    encrypted = _b64decode_loose(outer["encryptedLockedConfig"])
+
+    # Couche 1 : AES-256-CFB -> MessagePack
+    decrypted_outer = _aes_cfb_decrypt(encrypted, DT_KEY_256)
+    unpacked_outer = _parse_msgpack(decrypted_outer)
+
+    # Couche 2 : AES-192-CFB -> MessagePack
+    if isinstance(unpacked_outer, dict) and isinstance(
+        unpacked_outer.get("EncryptedLockedConfig"), (bytes, bytearray)
+    ):
+        inner = _aes_cfb_decrypt(
+            unpacked_outer["EncryptedLockedConfig"], DT_KEY_192
+        )
+        unpacked_inner = _parse_msgpack(inner)
+        unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(
+            unpacked_inner, DT_KEY_192
+        )
+
+    outer["encryptedLockedConfig"] = unpacked_outer
+    return _normalize_dark_json(outer)
+
+def _flatten_config(obj, result=None):
+    """Récupère les champs réseau lisibles depuis toute la structure."""
+    if result is None:
+        result = {}
+
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            key = str(k)
+            low = key.lower()
+
+            if isinstance(v, (str, int, float, bool)):
+                s = str(v)
+                if low in ("address", "server", "serveraddress", "server_address"):
+                    result.setdefault("address", s)
+                elif low in ("port", "serverport", "server_port"):
+                    result.setdefault("port", s)
+                elif low in ("servername", "server_name", "sni"):
+                    result.setdefault("sni", s)
+                elif low == "host":
+                    result.setdefault("host", s)
+                elif low == "path":
+                    result.setdefault("path", s)
+                elif low in ("network", "transport", "transportnetwork"):
+                    result.setdefault("network", s)
+                elif low in ("security", "tls"):
+                    result.setdefault("security", s)
+                elif low in ("protocol", "type"):
+                    result.setdefault("protocol", s)
+                elif low == "flow":
+                    result.setdefault("flow", s)
+                elif low == "email":
+                    result.setdefault("email", s)
+                elif low == "mux":
+                    result.setdefault("mux", s)
+
+            elif isinstance(v, (dict, list)):
+                _flatten_config(v, result)
+
+    elif isinstance(obj, list):
+        for item in obj:
+            _flatten_config(item, result)
+
     return result
 
 async def handle_dark_tunnel(update, context):
@@ -491,22 +557,16 @@ async def handle_dark_tunnel(update, context):
     if not document:
         return
 
-    original_name = document.file_name or "config.plus"
-    name = _normalize_filename(original_name)
-    lower_name = name.lower()
+    original_name = document.file_name or "config"
+    normalized_name = _normalize_filename(original_name)
+    lower_name = normalized_name.lower()
 
-    # Accepte les extensions normales ET leurs variantes Unicode stylisées.
-    if not lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark")):
-        await update.message.reply_text(
-            f"❌ Format non reconnu : {original_name}\n"
-            "Formats acceptés : .plus, .𝒑𝒍𝒖𝒔, .ehi, .hc, .hci, .dark"
-        )
-        return
+    # On accepte les extensions habituelles, y compris .dark et les variantes Unicode.
+    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark"))
 
-    safe_name = os.path.basename(name)
     path = os.path.join(
         tempfile.gettempdir(),
-        f"dt_{update.effective_user.id}_{os.getpid()}_{safe_name}"
+        f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
     )
 
     try:
@@ -514,56 +574,105 @@ async def handle_dark_tunnel(update, context):
         tg_file = await document.get_file()
         await tg_file.download_to_drive(path)
 
-        cfg = await asyncio.get_running_loop().run_in_executor(
-            None, decrypt_dark_tunnel_file, path
-        )
+        # Même si l'extension est inhabituelle, on reconnaît un vrai fichier Dark Tunnel
+        # grâce à son contenu vpnplus://.
+        if not accepted:
+            raw_head = Path(path).read_bytes()[:256]
+            try:
+                head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
+            except Exception:
+                head = ""
+            accepted = "://" in head and "eyJ" in head
 
-        labels = [
+        if not accepted:
+            await update.message.reply_text(
+                f"❌ Format non reconnu : {original_name}\n"
+                "Formats acceptés : .plus / .𝒑𝒍𝒖𝒔 / .dark / .ehi / .hc / .hci"
+            )
+            return
+
+        loop = asyncio.get_running_loop()
+        cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
+
+        flat = _flatten_config(cfg)
+
+        # Pour Trojan, le champ d'identification est "password", pas UUID.
+        # Les mots de passe ne sont volontairement pas affichés.
+        lines = [
+            "🔐 DARK TUNNEL — CONFIGURATION DÉCHIFFRÉE",
+            f"📄 Fichier : {original_name}",
+            ""
+        ]
+
+        display_order = [
             ("protocol", "Protocol"),
             ("address", "Address"),
             ("port", "Port"),
-            ("uuid", "UUID"),
             ("sni", "SNI"),
             ("host", "WS Host"),
             ("path", "WS Path"),
             ("network", "Transport"),
             ("security", "Security"),
+            ("mux", "MUX"),
+            ("flow", "Flow"),
         ]
 
-        lines = [
-            "🔐 DARK TUNNEL — ANALYSE",
-            f"📄 Fichier : {original_name}",
-            ""
-        ]
-        shown = False
+        found = False
+        for key, label in display_order:
+            if key in flat and flat[key] not in ("", None):
+                lines.append(f"{label} : {flat[key]}")
+                found = True
 
-        for key, label in labels:
-            if cfg.get(key) not in (None, ""):
-                lines.append(f"{label} : {cfg[key]}")
-                shown = True
+        if flat.get("protocol", "").upper() == "TROJAN":
+            lines.append("UUID : non applicable (Trojan utilise un mot de passe)")
 
-        if not shown:
-            lines.append("ℹ️ Aucun paramètre réseau lisible dans la couche décodée.")
+        if not found:
+            lines.append("ℹ️ Aucun paramètre réseau lisible.")
 
-        encrypted_fields = cfg.get("_encrypted_fields", [])
-        if encrypted_fields:
-            lines += [
-                "",
-                "🔒 Champs encore chiffrés :",
-                ", ".join(str(x["field"]) for x in encrypted_fields)
-            ]
+        # Affiche la structure V2Ray complète sans secrets de type Password.
+        try:
+            v2 = cfg["encryptedLockedConfig"]["EncryptedLockedConfig"]["V2RayConfig"]
+            if isinstance(v2, dict) and isinstance(v2.get("EncryptedConfig"), str):
+                parsed_v2 = _try_json_string(v2["EncryptedConfig"])
+                if isinstance(parsed_v2, dict):
+                    # Extraction explicite des serveurs, utile lorsque plusieurs existent.
+                    servers = (
+                        parsed_v2.get("outbounds", [{}])[0]
+                        .get("settings", {})
+                        .get("servers", [])
+                    )
+                    if servers:
+                        lines.append("")
+                        lines.append("🛰 V2Ray / Trojan")
+                        for idx, server in enumerate(servers, 1):
+                            if not isinstance(server, dict):
+                                continue
+                            if server.get("address"):
+                                lines.append(f"Serveur {idx} : {server['address']}")
+                            if server.get("port") is not None:
+                                lines.append(f"Port {idx} : {server['port']}")
+                            # password volontairement omis
+                            ss = (
+                                parsed_v2.get("outbounds", [{}])[0]
+                                .get("streamSettings", {})
+                            )
+                            tls = ss.get("tlsSettings", {})
+                            ws = ss.get("wsSettings", {})
+                            if tls.get("serverName"):
+                                lines.append(f"SNI {idx} : {tls['serverName']}")
+                            if ws.get("headers", {}).get("Host"):
+                                lines.append(f"WS Host {idx} : {ws['headers']['Host']}")
+                            if ws.get("path"):
+                                lines.append(f"WS Path {idx} : {ws['path']}")
+        except Exception:
+            pass
 
-        lines += [
-            "",
-            f"Couches JSON décodées : {cfg.get('_decoded_layers', 0)}",
-            SIGNATURE
-        ]
-
+        lines += ["", "✅ Déchiffrement Dark Tunnel terminé.", SIGNATURE]
         await update.message.reply_text("\n".join(lines)[:4000])
 
     except Exception as e:
         await update.message.reply_text(
-            f"❌ Erreur d'analyse : {str(e)[:800]}"
+            f"❌ Erreur de déchiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
         )
     finally:
         try:
@@ -644,7 +753,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.3 FULL...")
+    print("Building V25.5 DARK TUNNEL...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -662,7 +771,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.3 GO...")
+    print("V25.5 GO...")
     app.run_polling()
 
 if __name__ == "__main__":
