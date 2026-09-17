@@ -9,7 +9,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print("=== V25.3 FULL + PDF ===")
+print("=== V25.4 DARK TUNNEL DECODER ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -359,140 +359,128 @@ async def today_cmd(update,context):
 
 
 def _normalize_filename(name):
-    """Normalise les extensions Unicode stylisées (ex. 𝒑𝒍𝒖𝒔 -> plus)."""
-    try:
-        return unicodedata.normalize("NFKC", name)
-    except Exception:
-        return name
-
-def _try_json_bytes(data):
-    try:
-        return json.loads(data.decode("utf-8"))
-    except Exception:
-        return None
+    """Normalise les noms/extensions Unicode stylisés."""
+    return unicodedata.normalize("NFKC", name or "")
 
 def _b64decode_loose(value):
     if isinstance(value, str):
-        value = value.encode()
+        value = value.encode("ascii", "ignore")
     value = b"".join(value.split())
+    value = value.replace(b"-", b"+").replace(b"_", b"/")
     value += b"=" * (-len(value) % 4)
     return base64.b64decode(value, validate=False)
 
+def _try_json_bytes(data):
+    try:
+        return json.loads(data.decode("utf-8-sig"))
+    except Exception:
+        return None
+
 def _walk_config(obj, result=None):
-    """Extrait les champs réseau visibles sans deviner les valeurs chiffrées."""
     if result is None:
         result = {}
-
     if isinstance(obj, dict):
         for k, v in obj.items():
-            kl = str(k).lower()
+            kl = str(k).lower().replace("-", "_")
             if isinstance(v, (str, int, float, bool)):
-                s = str(v)
-                if kl in {"uuid", "user_id", "userid"} and "uuid" not in result:
-                    result["uuid"] = s
-                elif kl in {"sni", "servername", "server_name"} and "sni" not in result:
-                    result["sni"] = s
-                elif kl in {"host", "ws_host", "wshost"} and "host" not in result:
-                    result["host"] = s
-                elif kl in {"address", "server", "host_address", "server_address"} and "address" not in result:
-                    result["address"] = s
-                elif kl in {"port", "server_port", "port_number"} and "port" not in result:
-                    result["port"] = s
-                elif kl in {"path", "ws_path", "websocket_path"} and "path" not in result:
-                    result["path"] = s
-                elif kl in {"protocol", "type"} and "protocol" not in result:
-                    result["protocol"] = s
-                elif kl in {"network", "transport", "transportnetwork"} and "network" not in result:
-                    result["network"] = s
-                elif kl in {"security", "tls"} and "security" not in result:
-                    result["security"] = s
+                value = str(v)
+                aliases = {
+                    "uuid": "uuid", "id": "uuid", "userid": "uuid",
+                    "sni": "sni", "servername": "sni", "server_name": "sni",
+                    "host": "host", "wshost": "host", "ws_host": "host",
+                    "address": "address", "server": "address", "server_address": "address",
+                    "port": "port", "server_port": "port", "port_number": "port",
+                    "path": "path", "ws_path": "path", "websocket_path": "path",
+                    "protocol": "protocol", "type": "protocol",
+                    "network": "network", "transport": "network", "transportnetwork": "network",
+                    "security": "security", "tls": "security",
+                }
+                target = aliases.get(kl)
+                if target and target not in result:
+                    result[target] = value
             elif isinstance(v, (dict, list)):
                 _walk_config(v, result)
     elif isinstance(obj, list):
         for item in obj:
             _walk_config(item, result)
-
     return result
 
 def decrypt_dark_tunnel_file(path):
-    """
-    Parse la couche externe/base64/JSON d'un fichier Dark Tunnel-like.
-    Les champs qui restent cryptographiques sont signalés, sans
-    brute-force de clé.
-    """
+    """Décode la couche vpnplus:// Base64URL et inspecte le JSON résultant."""
     raw = Path(path).read_bytes()
-    candidates = [raw]
+    configs = []
+    encrypted = []
+    seen_json = set()
 
-    # Dark Tunnel peut utiliser un schéma Unicode stylisé, par ex.
-    # "𝒗𝒑𝒏𝒑𝒍𝒖𝒔://<base64url>".
-    # On normalise Unicode puis on retire le schéma avant le décodage.
+    def add_candidate(data):
+        obj = _try_json_bytes(data)
+        if obj is not None:
+            marker = repr(obj)
+            if marker not in seen_json:
+                seen_json.add(marker)
+                configs.append(obj)
+                return True
+        return False
+
+    # 1) Fichier texte Dark Tunnel: vpnplus://<base64url>.
     try:
-        raw_text = raw.decode("utf-8").strip()
-        normalized = unicodedata.normalize("NFKC", raw_text)
-        if "://" in normalized:
-            scheme, payload = normalized.split("://", 1)
-            if payload:
-                try:
-                    decoded = _b64decode_loose(payload)
-                    if decoded:
-                        candidates.append(decoded)
-                except Exception:
-                    pass
+        txt = raw.decode("utf-8-sig", "ignore").strip()
+        txt_norm = unicodedata.normalize("NFKC", txt)
+        # On ne dépend pas du nom exact du schéma: tout ce qui précède :// est accepté.
+        if "://" in txt_norm:
+            payload = txt_norm.split("://", 1)[1].strip()
+            try:
+                add_candidate(_b64decode_loose(payload))
+            except Exception:
+                pass
         else:
-            decoded = _b64decode_loose(normalized)
-            if decoded and decoded != raw:
-                candidates.append(decoded)
+            try:
+                add_candidate(_b64decode_loose(txt_norm))
+            except Exception:
+                pass
     except Exception:
         pass
 
-    configs = []
-    encrypted = []
+    # 2) Fallback: certains fichiers ont des octets/entêtes avant le Base64.
+    if not configs:
+        for marker in (b"eyJ", b"eyJ0eXBlIjo"):
+            pos = raw.find(marker)
+            if pos >= 0:
+                tail = raw[pos:]
+                try:
+                    add_candidate(_b64decode_loose(tail))
+                except Exception:
+                    pass
+                if configs:
+                    break
 
-    for data in candidates:
-        obj = _try_json_bytes(data)
-        if obj is not None:
-            configs.append(obj)
+    # 3) Explore les chaînes Base64 qui peuvent contenir une couche JSON suivante.
+    index = 0
+    while index < len(configs):
+        obj = configs[index]
+        index += 1
+        stack = [obj]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                for k, v in cur.items():
+                    kl = str(k).lower()
+                    if isinstance(v, str):
+                        if any(x in kl for x in ("encrypt", "locked", "cipher")):
+                            encrypted.append({"field": str(k), "length": len(v)})
+                        if len(v) >= 40 and re.fullmatch(r"[A-Za-z0-9+/=_-]+", v):
+                            try:
+                                nested = _b64decode_loose(v)
+                                if _try_json_bytes(nested) is not None:
+                                    add_candidate(nested)
+                            except Exception:
+                                pass
+                    elif isinstance(v, (dict, list)):
+                        stack.append(v)
+            elif isinstance(cur, list):
+                stack.extend(x for x in cur if isinstance(x, (dict, list)))
 
-    # Inspecte récursivement les chaînes Base64 contenant éventuellement
-    # une autre couche JSON.
-    seen = set()
-    changed = True
-    while changed:
-        changed = False
-        snapshot = list(configs)
-        for obj in snapshot:
-            oid = id(obj)
-            if oid in seen:
-                continue
-            seen.add(oid)
-
-            stack = [obj]
-            while stack:
-                cur = stack.pop()
-                if isinstance(cur, dict):
-                    for k, v in cur.items():
-                        kl = str(k).lower()
-                        if isinstance(v, str):
-                            if "encrypt" in kl or "locked" in kl or "cipher" in kl:
-                                encrypted.append({"field": str(k), "length": len(v)})
-                            if len(v) > 40 and re.fullmatch(r"[A-Za-z0-9+/=_-]+", v):
-                                try:
-                                    d = _b64decode_loose(v)
-                                    nested = _try_json_bytes(d)
-                                    if nested is not None:
-                                        configs.append(nested)
-                                        changed = True
-                                except Exception:
-                                    pass
-                        elif isinstance(v, (dict, list)):
-                            stack.append(v)
-                elif isinstance(cur, list):
-                    stack.extend(x for x in cur if isinstance(x, (dict, list)))
-
-    result = {}
-    for cfg in configs:
-        _walk_config(cfg, result)
-
+    result = _walk_config(configs[0]) if configs else {}
     result["_encrypted_fields"] = encrypted
     result["_decoded_layers"] = len(configs)
     return result
