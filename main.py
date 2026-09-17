@@ -551,6 +551,96 @@ def _flatten_config(obj, result=None):
 
     return result
 
+def _first_scalar(obj, names):
+    """Cherche récursivement la première valeur scalaire associée à l'un des noms."""
+    wanted = {str(x).lower() for x in names}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in wanted and isinstance(v, (str, int, float, bool)):
+                return v
+            found = _first_scalar(v, names)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _first_scalar(item, names)
+            if found is not None:
+                return found
+    return None
+
+def _extract_v2ray_configs(cfg):
+    """
+    Extrait les paramètres V2Ray/Xray réellement présents dans la configuration
+    déchiffrée, sans supposer que les champs sont au premier niveau.
+    """
+    result = []
+    seen = set()
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            # Un objet de serveur VLESS/VMess est typiquement reconnaissable par address/port.
+            if "address" in obj and ("port" in obj or "users" in obj):
+                key = (str(obj.get("address")), str(obj.get("port")), str(obj.get("uuid")))
+                if key not in seen:
+                    seen.add(key)
+                    result.append(obj)
+
+            # Les users VLESS/VMess peuvent être profondément imbriqués.
+            users = obj.get("users")
+            if isinstance(users, list):
+                for u in users:
+                    if isinstance(u, dict):
+                        item = dict(u)
+                        if "address" not in item and obj.get("address") is not None:
+                            item["address"] = obj.get("address")
+                        if "port" not in item and obj.get("port") is not None:
+                            item["port"] = obj.get("port")
+                        result.append(item)
+
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+
+    walk(cfg)
+
+    # Déduplique.
+    unique = []
+    seen2 = set()
+    for x in result:
+        key = (
+            str(x.get("address")),
+            str(x.get("port")),
+            str(x.get("id") or x.get("uuid") or x.get("password")),
+        )
+        if key not in seen2:
+            seen2.add(key)
+            unique.append(x)
+    return unique
+
+def _extract_transport_details(cfg):
+    """Récupère WS/TLS/Reality/gRPC/TCP et les éventuels paramètres proxy de l'app."""
+    out = {
+        "network": _first_scalar(cfg, ["network", "transportNetwork"]),
+        "security": _first_scalar(cfg, ["security"]),
+        "sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),
+        "host": _first_scalar(cfg, ["Host", "host"]),
+        "path": _first_scalar(cfg, ["path", "wsPath"]),
+        "serviceName": _first_scalar(cfg, ["serviceName"]),
+        "flow": _first_scalar(cfg, ["flow"]),
+        "fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),
+        "publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),
+        "shortId": _first_scalar(cfg, ["shortId", "sid"]),
+        "allowInsecure": _first_scalar(cfg, ["allowInsecure"]),
+        "proxyHost": _first_scalar(cfg, ["proxyHost"]),
+        "proxyPort": _first_scalar(cfg, ["proxyPort"]),
+        "httpPort": _first_scalar(cfg, ["httpPort"]),
+        "socks5Port": _first_scalar(cfg, ["socks5Port"]),
+        "allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),
+    }
+    return {k: v for k, v in out.items() if v not in (None, "")}
+
 async def handle_dark_tunnel(update, context):
     save_user(update.effective_user.id)
     document = update.message.document
@@ -561,7 +651,6 @@ async def handle_dark_tunnel(update, context):
     normalized_name = _normalize_filename(original_name)
     lower_name = normalized_name.lower()
 
-    # On accepte les extensions habituelles, y compris .dark et les variantes Unicode.
     accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark"))
 
     path = os.path.join(
@@ -574,15 +663,13 @@ async def handle_dark_tunnel(update, context):
         tg_file = await document.get_file()
         await tg_file.download_to_drive(path)
 
-        # Même si l'extension est inhabituelle, on reconnaît un vrai fichier Dark Tunnel
-        # grâce à son contenu vpnplus://.
         if not accepted:
-            raw_head = Path(path).read_bytes()[:256]
+            raw_head = Path(path).read_bytes()[:512]
             try:
                 head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
             except Exception:
                 head = ""
-            accepted = "://" in head and "eyJ" in head
+            accepted = "://" in head and ("eyJ" in head or "AH" in head)
 
         if not accepted:
             await update.message.reply_text(
@@ -594,78 +681,95 @@ async def handle_dark_tunnel(update, context):
         loop = asyncio.get_running_loop()
         cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
 
-        flat = _flatten_config(cfg)
+        details = _extract_transport_details(cfg)
+        servers = _extract_v2ray_configs(cfg)
 
-        # Pour Trojan, le champ d'identification est "password", pas UUID.
-        # Les mots de passe ne sont volontairement pas affichés.
         lines = [
             "🔐 DARK TUNNEL — CONFIGURATION DÉCHIFFRÉE",
             f"📄 Fichier : {original_name}",
             ""
         ]
 
-        display_order = [
-            ("protocol", "Protocol"),
-            ("address", "Address"),
-            ("port", "Port"),
+        # Affichage des serveurs et identifiants réellement présents.
+        if servers:
+            lines.append(f"🖥️ SERVEURS / COMPTES : {len(servers)}")
+            for i, server in enumerate(servers, 1):
+                lines.append("")
+                lines.append(f"━━ Serveur {i} ━━")
+
+                address = server.get("address") or server.get("server")
+                port = server.get("port")
+                protocol = server.get("protocol") or details.get("protocol")
+
+                if protocol:
+                    lines.append(f"Protocol : {protocol}")
+                if address is not None:
+                    lines.append(f"Address : {address}")
+                if port is not None:
+                    lines.append(f"Port : {port}")
+
+                # VLESS/VMess utilisent généralement id; Trojan utilise password.
+                uid = server.get("id") or server.get("uuid")
+                if uid:
+                    lines.append(f"UUID / ID : {uid}")
+
+                if server.get("encryption") not in (None, ""):
+                    lines.append(f"Encryption : {server.get('encryption')}")
+
+                if server.get("alterId") is not None:
+                    lines.append(f"AlterId : {server.get('alterId')}")
+
+                if server.get("level") is not None:
+                    lines.append(f"Level : {server.get('level')}")
+
+                if server.get("flow") not in (None, ""):
+                    lines.append(f"Flow : {server.get('flow')}")
+
+                # Pour Trojan, le secret est un mot de passe et non un UUID.
+                if server.get("password"):
+                    lines.append(f"Password : {server.get('password')}")
+        else:
+            lines.append("🖥️ Aucun serveur V2Ray/VLESS/VMess trouvé.")
+
+        # Transport.
+        lines.append("")
+        lines.append("🌐 TRANSPORT")
+        for key, label in [
+            ("network", "Transport"),
+            ("security", "Security"),
             ("sni", "SNI"),
             ("host", "WS Host"),
             ("path", "WS Path"),
-            ("network", "Transport"),
-            ("security", "Security"),
-            ("mux", "MUX"),
+            ("serviceName", "gRPC Service"),
             ("flow", "Flow"),
+            ("fingerprint", "Fingerprint"),
+            ("publicKey", "Reality Public Key"),
+            ("shortId", "Reality Short ID"),
+            ("allowInsecure", "Allow Insecure"),
+        ]:
+            if key in details:
+                lines.append(f"{label} : {details[key]}")
+
+        # Proxy/local listener de l'application : ne pas confondre avec le serveur distant.
+        proxy_fields = [
+            ("proxyHost", "Proxy Host"),
+            ("proxyPort", "Proxy Port"),
+            ("httpPort", "HTTP Proxy Port"),
+            ("socks5Port", "SOCKS5 Port"),
+            ("allowAccessFromLan", "LAN Access"),
         ]
+        present_proxy = [(label, details[key]) for key, label in proxy_fields if key in details]
+        if present_proxy:
+            lines.append("")
+            lines.append("🔀 PROXY / LISTENERS")
+            for label, value in present_proxy:
+                lines.append(f"{label} : {value}")
 
-        found = False
-        for key, label in display_order:
-            if key in flat and flat[key] not in ("", None):
-                lines.append(f"{label} : {flat[key]}")
-                found = True
-
-        if flat.get("protocol", "").upper() == "TROJAN":
-            lines.append("UUID : non applicable (Trojan utilise un mot de passe)")
-
-        if not found:
-            lines.append("ℹ️ Aucun paramètre réseau lisible.")
-
-        # Affiche la structure V2Ray complète sans secrets de type Password.
-        try:
-            v2 = cfg["encryptedLockedConfig"]["EncryptedLockedConfig"]["V2RayConfig"]
-            if isinstance(v2, dict) and isinstance(v2.get("EncryptedConfig"), str):
-                parsed_v2 = _try_json_string(v2["EncryptedConfig"])
-                if isinstance(parsed_v2, dict):
-                    # Extraction explicite des serveurs, utile lorsque plusieurs existent.
-                    servers = (
-                        parsed_v2.get("outbounds", [{}])[0]
-                        .get("settings", {})
-                        .get("servers", [])
-                    )
-                    if servers:
-                        lines.append("")
-                        lines.append("🛰 V2Ray / Trojan")
-                        for idx, server in enumerate(servers, 1):
-                            if not isinstance(server, dict):
-                                continue
-                            if server.get("address"):
-                                lines.append(f"Serveur {idx} : {server['address']}")
-                            if server.get("port") is not None:
-                                lines.append(f"Port {idx} : {server['port']}")
-                            # password volontairement omis
-                            ss = (
-                                parsed_v2.get("outbounds", [{}])[0]
-                                .get("streamSettings", {})
-                            )
-                            tls = ss.get("tlsSettings", {})
-                            ws = ss.get("wsSettings", {})
-                            if tls.get("serverName"):
-                                lines.append(f"SNI {idx} : {tls['serverName']}")
-                            if ws.get("headers", {}).get("Host"):
-                                lines.append(f"WS Host {idx} : {ws['headers']['Host']}")
-                            if ws.get("path"):
-                                lines.append(f"WS Path {idx} : {ws['path']}")
-        except Exception:
-            pass
+        # Affiche les paramètres additionnels lisibles sans remplacer les valeurs
+        # par des suppositions.
+        if not servers and not present_proxy:
+            lines.append("")
+            lines.append("ℹ️ Aucun paramètre réseau supplémentaire lisible.")
 
         lines += ["", "✅ Déchiffrement Dark Tunnel terminé.", SIGNATURE]
         await update.message.reply_text("\n".join(lines)[:4000])
@@ -680,6 +784,7 @@ async def handle_dark_tunnel(update, context):
                 os.remove(path)
         except Exception:
             pass
+
 
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
