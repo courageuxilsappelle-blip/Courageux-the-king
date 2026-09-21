@@ -122,6 +122,34 @@ def get_host_info(host):
         info["error"] = str(e)
     return info
 
+# === NOUVEAU: FONCTION BLACKLIST COMME whatismyipaddress.com ===
+def check_blacklist_dns(ip):
+    blacklists = [
+        "zen.spamhaus.org",
+        "bl.spamcop.net",
+        "b.barracudacentral.org",
+        "proxy.bl.gweep.ca",
+        "dnsbl.sorbs.net",
+        "all.s5h.net",
+        "cbl.abuseat.org"
+    ]
+    try:
+        reversed_ip = ".".join(reversed(ip.split(".")))
+        listed = []
+        clean = 0
+        for bl in blacklists:
+            try:
+                query = f"{reversed_ip}.{bl}"
+                socket.gethostbyname(query)
+                listed.append(bl)
+            except socket.gaierror:
+                clean += 1
+            except:
+                pass
+        return listed, clean, len(blacklists)
+    except:
+        return [], 0, 7
+
 def check_port_200(host, ip, port):
     result = {"port":port,"open":False,"status":"FERME","is_200":False,"code":0}
     try:
@@ -236,7 +264,7 @@ def create_score_image(t):
 
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
@@ -328,6 +356,42 @@ async def scan200_cmd(update,context):
     txt += f"\n\n{SIGNATURE}"
     await update.message.reply_text(txt)
 
+# === NOUVELLE COMMANDE /bl ===
+async def bl_cmd(update,context):
+    save_user(update.effective_user.id)
+    if not context.args:
+        await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
+        return
+    ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
+    # Si on donne un host, on résout en IP
+    try:
+        if not re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
+            ip = socket.gethostbyname(ip)
+    except:
+        pass
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
+    await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
+    loop = asyncio.get_event_loop()
+    listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
+
+    if not listed:
+        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\n"
+        txt += f"Status: PROPRE ✅\n"
+        txt += f"Listes checkées: {total}\n"
+        txt += f"Propres: {clean}/{total}\n\n"
+        txt += f"all.s5h.net: Not Listed\n"
+        txt += f"b.barracudacentral.org: Not Listed\n"
+        txt += f"bl.spamcop.net: Not Listed\n"
+        txt += f"proxy.bl.gweep.ca: Not Listed (pas proxy spam)\n"
+        txt += f"\n{SIGNATURE}"
+    else:
+        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\n"
+        txt += f"Blacklistée sur {len(listed)}/{total}:\n"
+        for bl in listed:
+            txt += f"❌ {bl}\n"
+        txt += f"\n{SIGNATURE}"
+    await update.message.reply_text(txt)
+
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -358,9 +422,7 @@ async def today_cmd(update,context):
     except:
         await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
 
-
 def _normalize_filename(name):
-    """Normalise les extensions Unicode stylisées (ex. 𝒑𝒍𝒖𝒔 -> plus)."""
     try:
         return unicodedata.normalize("NFKC", name or "")
     except Exception:
@@ -379,12 +441,10 @@ def _b64decode_loose(value):
     return base64.b64decode(value, validate=False)
 
 def _aes_cfb_decrypt(data, key):
-    """AES-CFB-128, avec PyCryptodome si disponible, sinon OpenSSL."""
     try:
         from Crypto.Cipher import AES
         return AES.new(key, AES.MODE_CFB, iv=DT_IV, segment_size=128).decrypt(data)
     except ImportError:
-        # Fallback utile sur les hébergeurs où pycryptodome n'est pas installé.
         with tempfile.NamedTemporaryFile(delete=False) as fi, tempfile.NamedTemporaryFile(delete=False) as fo:
             fi.write(data)
             in_name, out_name = fi.name, fo.name
@@ -398,7 +458,7 @@ def _aes_cfb_decrypt(data, key):
                 ],
                 capture_output=True, text=True, timeout=15
             )
-            if p.returncode != 0:
+            if p.returncode!= 0:
                 raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
             return Path(out_name).read_bytes()
         finally:
@@ -416,8 +476,6 @@ def _try_json_string(value):
             (stripped.startswith("[") and stripped.endswith("]"))):
         return value
     try:
-        # Dark Tunnel utilise parfois des placeholders JSON non quotés:
-        # $MUX_ENABLED, $SOCKS5_LISTEN_PORT, etc.
         fixed = re.sub(r'(:\s*)(\$[A-Za-z0-9_]+)', r'\1"\2"', stripped)
         return _normalize_dark_json(json.loads(fixed))
     except Exception:
@@ -425,7 +483,7 @@ def _try_json_string(value):
 
 def _normalize_dark_json(value):
     if isinstance(value, dict):
-        return {k: _normalize_dark_json(v) for k, v in value.items() if k != "Password"}
+        return {k: _normalize_dark_json(v) for k, v in value.items() if k!= "Password"}
     if isinstance(value, list):
         return [_normalize_dark_json(v) for v in value]
     if isinstance(value, bytes):
@@ -438,7 +496,6 @@ def _normalize_dark_json(value):
     return value
 
 def _decrypt_encrypted_fields(obj, key):
-    """Déchiffre récursivement les valeurs des clés commençant par Encrypted."""
     if isinstance(obj, dict):
         result = {}
         for k, v in obj.items():
@@ -458,41 +515,23 @@ def _parse_msgpack(data):
     return msgpack.unpackb(data, raw=False, strict_map_key=False)
 
 def decrypt_dark_tunnel_file(path):
-    """
-    Décode le format Dark Tunnel observé dans les fichiers .plus/.dark:
-      vpnplus:// + Base64URL(JSON)
-      -> AES-CFB-256
-      -> MessagePack
-      -> AES-CFB-192 sur EncryptedLockedConfig
-      -> déchiffrement récursif des champs Encrypted*
-    """
     raw = Path(path).read_bytes()
     txt = raw.decode("utf-8-sig", "ignore").strip()
     txt = _normalize_filename(txt)
-
     if "://" in txt:
         payload = txt.split("://", 1)[1].strip()
     else:
         payload = txt
-
-    # Fallback pour d'éventuels préfixes avant eyJ...
     if not payload.startswith(("eyJ", "ey")):
         m = re.search(r"(eyJ[A-Za-z0-9_-]+)", payload)
         if m:
             payload = m.group(1)
-
     outer = json.loads(_b64decode_loose(payload).decode("utf-8"))
-
     if "encryptedLockedConfig" not in outer:
         raise ValueError("Champ encryptedLockedConfig absent")
-
     encrypted = _b64decode_loose(outer["encryptedLockedConfig"])
-
-    # Couche 1 : AES-256-CFB -> MessagePack
     decrypted_outer = _aes_cfb_decrypt(encrypted, DT_KEY_256)
     unpacked_outer = _parse_msgpack(decrypted_outer)
-
-    # Couche 2 : AES-192-CFB -> MessagePack
     if isinstance(unpacked_outer, dict) and isinstance(
         unpacked_outer.get("EncryptedLockedConfig"), (bytes, bytearray)
     ):
@@ -503,20 +542,16 @@ def decrypt_dark_tunnel_file(path):
         unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(
             unpacked_inner, DT_KEY_192
         )
-
     outer["encryptedLockedConfig"] = unpacked_outer
     return _normalize_dark_json(outer)
 
 def _flatten_config(obj, result=None):
-    """Récupère les champs réseau lisibles depuis toute la structure."""
     if result is None:
         result = {}
-
     if isinstance(obj, dict):
         for k, v in obj.items():
             key = str(k)
             low = key.lower()
-
             if isinstance(v, (str, int, float, bool)):
                 s = str(v)
                 if low in ("address", "server", "serveraddress", "server_address"):
@@ -541,18 +576,14 @@ def _flatten_config(obj, result=None):
                     result.setdefault("email", s)
                 elif low == "mux":
                     result.setdefault("mux", s)
-
             elif isinstance(v, (dict, list)):
                 _flatten_config(v, result)
-
     elif isinstance(obj, list):
         for item in obj:
             _flatten_config(item, result)
-
     return result
 
 def _first_scalar(obj, names):
-    """Cherche récursivement la première valeur scalaire associée à l'un des noms."""
     wanted = {str(x).lower() for x in names}
     if isinstance(obj, dict):
         for k, v in obj.items():
@@ -569,23 +600,15 @@ def _first_scalar(obj, names):
     return None
 
 def _extract_v2ray_configs(cfg):
-    """
-    Extrait les paramètres V2Ray/Xray réellement présents dans la configuration
-    déchiffrée, sans supposer que les champs sont au premier niveau.
-    """
     result = []
     seen = set()
-
     def walk(obj):
         if isinstance(obj, dict):
-            # Un objet de serveur VLESS/VMess est typiquement reconnaissable par address/port.
             if "address" in obj and ("port" in obj or "users" in obj):
                 key = (str(obj.get("address")), str(obj.get("port")), str(obj.get("uuid")))
                 if key not in seen:
                     seen.add(key)
                     result.append(obj)
-
-            # Les users VLESS/VMess peuvent être profondément imbriqués.
             users = obj.get("users")
             if isinstance(users, list):
                 for u in users:
@@ -596,16 +619,12 @@ def _extract_v2ray_configs(cfg):
                         if "port" not in item and obj.get("port") is not None:
                             item["port"] = obj.get("port")
                         result.append(item)
-
             for v in obj.values():
                 walk(v)
         elif isinstance(obj, list):
             for v in obj:
                 walk(v)
-
     walk(cfg)
-
-    # Déduplique.
     unique = []
     seen2 = set()
     for x in result:
@@ -620,7 +639,6 @@ def _extract_v2ray_configs(cfg):
     return unique
 
 def _extract_transport_details(cfg):
-    """Récupère WS/TLS/Reality/gRPC/TCP et les éventuels paramètres proxy de l'app."""
     out = {
         "network": _first_scalar(cfg, ["network", "transportNetwork"]),
         "security": _first_scalar(cfg, ["security"]),
@@ -646,23 +664,18 @@ async def handle_dark_tunnel(update, context):
     document = update.message.document
     if not document:
         return
-
     original_name = document.file_name or "config"
     normalized_name = _normalize_filename(original_name)
     lower_name = normalized_name.lower()
-
     accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark"))
-
     path = os.path.join(
         tempfile.gettempdir(),
         f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
     )
-
     try:
         await update.message.reply_text("🔐 Analyse de la configuration...")
         tg_file = await document.get_file()
         await tg_file.download_to_drive(path)
-
         if not accepted:
             raw_head = Path(path).read_bytes()[:512]
             try:
@@ -670,68 +683,50 @@ async def handle_dark_tunnel(update, context):
             except Exception:
                 head = ""
             accepted = "://" in head and ("eyJ" in head or "AH" in head)
-
         if not accepted:
             await update.message.reply_text(
                 f"❌ Format non reconnu : {original_name}\n"
-                "Formats acceptés : .plus / .𝒑𝒍𝒖𝒔 / .dark / .ehi / .hc / .hci"
+                "Formats acceptés :.plus /.𝒑𝒍𝒖𝒔 /.dark /.ehi /.hc /.hci"
             )
             return
-
         loop = asyncio.get_running_loop()
         cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
-
         details = _extract_transport_details(cfg)
         servers = _extract_v2ray_configs(cfg)
-
         lines = [
             "🔐 DARK TUNNEL — CONFIGURATION DÉCHIFFRÉE",
             f"📄 Fichier : {original_name}",
             ""
         ]
-
-        # Affichage des serveurs et identifiants réellement présents.
         if servers:
             lines.append(f"🖥️ SERVEURS / COMPTES : {len(servers)}")
             for i, server in enumerate(servers, 1):
                 lines.append("")
                 lines.append(f"━━ Serveur {i} ━━")
-
                 address = server.get("address") or server.get("server")
                 port = server.get("port")
                 protocol = server.get("protocol") or details.get("protocol")
-
                 if protocol:
                     lines.append(f"Protocol : {protocol}")
                 if address is not None:
                     lines.append(f"Address : {address}")
                 if port is not None:
                     lines.append(f"Port : {port}")
-
-                # VLESS/VMess utilisent généralement id; Trojan utilise password.
                 uid = server.get("id") or server.get("uuid")
                 if uid:
                     lines.append(f"UUID / ID : {uid}")
-
                 if server.get("encryption") not in (None, ""):
                     lines.append(f"Encryption : {server.get('encryption')}")
-
                 if server.get("alterId") is not None:
                     lines.append(f"AlterId : {server.get('alterId')}")
-
                 if server.get("level") is not None:
                     lines.append(f"Level : {server.get('level')}")
-
                 if server.get("flow") not in (None, ""):
                     lines.append(f"Flow : {server.get('flow')}")
-
-                # Pour Trojan, le secret est un mot de passe et non un UUID.
                 if server.get("password"):
                     lines.append(f"Password : {server.get('password')}")
         else:
             lines.append("🖥️ Aucun serveur V2Ray/VLESS/VMess trouvé.")
-
-        # Transport.
         lines.append("")
         lines.append("🌐 TRANSPORT")
         for key, label in [
@@ -749,8 +744,6 @@ async def handle_dark_tunnel(update, context):
         ]:
             if key in details:
                 lines.append(f"{label} : {details[key]}")
-
-        # Proxy/local listener de l'application : ne pas confondre avec le serveur distant.
         proxy_fields = [
             ("proxyHost", "Proxy Host"),
             ("proxyPort", "Proxy Port"),
@@ -764,16 +757,11 @@ async def handle_dark_tunnel(update, context):
             lines.append("🔀 PROXY / LISTENERS")
             for label, value in present_proxy:
                 lines.append(f"{label} : {value}")
-
-        # Affiche les paramètres additionnels lisibles sans remplacer les valeurs
-        # par des suppositions.
         if not servers and not present_proxy:
             lines.append("")
             lines.append("ℹ️ Aucun paramètre réseau supplémentaire lisible.")
-
         lines += ["", "✅ Déchiffrement Dark Tunnel terminé.", SIGNATURE]
         await update.message.reply_text("\n".join(lines)[:4000])
-
     except Exception as e:
         await update.message.reply_text(
             f"❌ Erreur de déchiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
@@ -784,7 +772,6 @@ async def handle_dark_tunnel(update, context):
                 os.remove(path)
         except Exception:
             pass
-
 
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
@@ -867,6 +854,8 @@ def main():
     app.add_handler(CommandHandler("scan", scan_cmd))
     app.add_handler(CommandHandler("trace", scan_cmd))
     app.add_handler(CommandHandler("scan200", scan200_cmd))
+    app.add_handler(CommandHandler("bl", bl_cmd))
+    app.add_handler(CommandHandler("blacklist", bl_cmd))
     app.add_handler(CommandHandler("mtr", mtr_cmd))
     app.add_handler(CommandHandler("pdf", pdf_cmd))
     app.add_handler(CommandHandler("mp3", mp3_cmd))
@@ -881,4 +870,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
