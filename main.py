@@ -85,7 +85,7 @@ def get_total_users():
 def to_3d(t):
     try:
         n = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        b = "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
+        b = "ð—”ð—•ð—–ð——ð—˜ð—™ð—šð—›ð—œð—ð—žð—Ÿð— ð—¡ð—¢ð—£ð—¤ð—¥ð—¦ð—§ð—¨ð—©ð—ªð—«ð—¬ð—­ð—®ð—¯ð—°ð—±ð—²ð—³ð—´ð—µð—¶ð—·ð—¸ð—¹ð—ºð—»ð—¼ð—½ð—¾ð—¿ð˜€ð˜ð˜‚ð˜ƒð˜„ð˜…ð˜†ð˜‡ðŸ¬ðŸ­ðŸ®ðŸ¯ðŸ°ðŸ±ðŸ²ðŸ³ðŸ´ðŸµ"
         return "".join([b[n.index(c)] if c in n else c for c in t])
     except:
         return t
@@ -298,7 +298,7 @@ def create_score_image(t):
 
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\nðŸ“¸ Photo\nðŸ“¥ Lien YT/TikTok\nðŸŽ¯ /exact Team vs Team\nðŸ”¥ /today\nðŸ” /scan host\nðŸ“š /pdf sujet\nðŸ” /vmess /stats\nðŸ›¡ï¸ /bl ip = blacklist check"))
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
@@ -315,10 +315,10 @@ async def vmess_cmd(update,context):
 async def pdf_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("📚 /pdf + sujet Ex: /pdf guide business")
+        await update.message.reply_text("ðŸ“š /pdf + sujet Ex: /pdf guide business")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"ðŸ“š Generation livre: {sujet}... 20s")
     try:
         prompt = f"Ecris un livre complet en francais sur: {sujet}. 5 chapitres, intro, conclusion, conseils. 1500 mots minimum."
         comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.7,max_tokens=4000)
@@ -337,7 +337,7 @@ async def pdf_cmd(update,context):
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("📡 /mtr 1.1.1.1 8.8.8.8")
+        await update.message.reply_text("ðŸ“¡ /mtr 1.1.1.1 8.8.8.8")
         return
     raw = " ".join(context.args)
     ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
@@ -357,7 +357,7 @@ async def mtr_cmd(update,context):
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🔍 /scan host")
+        await update.message.reply_text("ðŸ” /scan host")
         return
     host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -394,24 +394,24 @@ async def scan200_cmd(update,context):
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
+        await update.message.reply_text("ðŸ›¡ï¸ Usage: /bl 34.120.159.235")
         return
     ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    # Si on donne un host, on résout en IP
+    # Si on donne un host, on rÃ©sout en IP
     try:
         if not re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
             ip = socket.gethostbyname(ip)
     except:
         pass
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
+    await update.message.reply_text(f"ðŸ›¡ï¸ VÃ©rif blacklist {ip}... 5s")
     loop = asyncio.get_event_loop()
     listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
 
     if not listed:
-        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\n"
-        txt += f"Status: PROPRE ✅\n"
-        txt += f"Listes checkées: {total}\n"
+        txt = f"âœ… IP Not Listed (Good!)\n\nIP: {ip}\n"
+        txt += f"Status: PROPRE âœ…\n"
+        txt += f"Listes checkÃ©es: {total}\n"
         txt += f"Propres: {clean}/{total}\n\n"
         txt += f"all.s5h.net: Not Listed\n"
         txt += f"b.barracudacentral.org: Not Listed\n"
@@ -419,17 +419,17 @@ async def bl_cmd(update,context):
         txt += f"proxy.bl.gweep.ca: Not Listed (pas proxy spam)\n"
         txt += f"\n{SIGNATURE}"
     else:
-        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\n"
-        txt += f"Blacklistée sur {len(listed)}/{total}:\n"
+        txt = f"âŒ IP Listed (Bad!)\n\nIP: {ip}\n"
+        txt += f"BlacklistÃ©e sur {len(listed)}/{total}:\n"
         for bl in listed:
-            txt += f"❌ {bl}\n"
+            txt += f"âŒ {bl}\n"
         txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
 
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🎯 /exact Man City vs Arsenal")
+        await update.message.reply_text("ðŸŽ¯ /exact Man City vs Arsenal")
         return
     pred = predict_exact_score(" ".join(context.args))
     try:
@@ -493,7 +493,7 @@ def _aes_cfb_decrypt(data, key):
                 capture_output=True, text=True, timeout=15
             )
             if p.returncode!= 0:
-                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
+                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a Ã©chouÃ©")
             return Path(out_name).read_bytes()
         finally:
             for f in (in_name, out_name):
@@ -694,68 +694,135 @@ def _extract_transport_details(cfg):
     return {k: v for k, v in out.items() if v not in (None, "")}
 
 async def handle_dark_tunnel(update, context):
-    message = update.message
-    doc = message.document
-    if not doc:
+    save_user(update.effective_user.id)
+    document = update.message.document
+    if not document:
         return
-
-    path = f"/tmp/{doc.file_name}"
-    file = await context.bot.get_file(doc.file_id)
-    await file.download_to_drive(path)
-
+    original_name = document.file_name or "config"
+    normalized_name = _normalize_filename(original_name)
+    lower_name = normalized_name.lower()
+    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark", ".ssc", ".npvt", ".nm", ".sks", ".tnl", ".sip", ".hat", ".ziv", ".v2box", ".ini", ".txt"))
+    path = os.path.join(
+        tempfile.gettempdir(),
+        f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
+    )
     try:
-        # 1. On essaie sans mot de passe d'abord
-        from HTTPCUSTOM import decrypt
-        result = decrypt(path, password=None)
-
-        # Si result est None -> fichier protégé
-        if result is None:
-            # 2. Est-ce que l'utilisateur a mis le code en légende du fichier?
-            caption_pwd = None
-            if message.caption:
-                caption_pwd = message.caption.strip().split()[0] # prend le 1er mot de la légende
-
-            # Si pas de légende, on regarde s'il a mis le code juste après dans pending
-            pwd_to_try = caption_pwd
-
-            if not pwd_to_try:
-                # Pas de mot de passe fourni, on demande
-                context.user_data['pending_hc'] = path
-                await message.reply_text(
-                    "🔒 Ce fichier HC est protégé par un mot de passe.\n\n"
-                    "Envoie le code que tu as mis dans HTTP Custom et je vais le déchiffrer.\n\n"
-                    "💡 Astuce: Tu peux aussi renvoyer directement le fichier avec le code en légende."
-                )
+        await update.message.reply_text("ðŸ” Analyse de la configuration...")
+        tg_file = await document.get_file()
+        await tg_file.download_to_drive(path)
+        # PATCH MATRIX
+        try:
+            raw = Path(path).read_bytes()
+            out=[]
+            for name,mod in MATRIX_MODULES.items():
+                try:
+                    func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None)
+                    if func:
+                        try: res = func(str(path))
+                        except: res = func(raw)
+                        out.append(f"[{name}] OK => {str(res)[:2000]}")
+                except: pass
+            if out:
+                await update.message.reply_text("\n---\n".join(out)[:4000])
                 return
-
-            # 3. On a un code en légende, on teste direct
-            await message.reply_text(f"🔑 Test code `{pwd_to_try}` en légende...", parse_mode='Markdown')
-            result = decrypt(path, password=pwd_to_try)
-
-            if result is None:
-                await message.reply_text(f"❌ Code `{pwd_to_try}` incorrect, réessaie.")
-                context.user_data['pending_hc'] = path
-                return
-            else:
-                # OK déchiffré avec légende
-                await message.reply_text(f"✅ Déchiffré avec le code `{pwd_to_try}`!")
-                # continue pour afficher le résultat en bas
-
-        # Si on arrive ici, result contient la config déchiffrée
-        #... ton code d'affichage habituel (analyse, envoi PDF etc)...
-        await message.reply_text(f"🔓 Config: {str(result)[:1000]}")
-
-    finally:
-        if 'pending_hc' not in context.user_data:
-            try: os.remove(path)
-            except: pass
-            return True
+        except: pass
+        if not accepted:
+            raw_head = Path(path).read_bytes()[:512]
+            try:
+                head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
+            except Exception:
+                head = ""
+            accepted = "://" in head and ("eyJ" in head or "AH" in head)
+        if not accepted:
+            await update.message.reply_text(
+                f"âŒ Format non reconnu : {original_name}\n"
+                "Formats acceptÃ©s :.plus /.ð’‘ð’ð’–ð’” /.dark /.ehi /.hc /.hci"
+            )
+            return
+        loop = asyncio.get_running_loop()
+        cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
+        details = _extract_transport_details(cfg)
+        servers = _extract_v2ray_configs(cfg)
+        lines = [
+            "ðŸ” DARK TUNNEL â€” CONFIGURATION DÃ‰CHIFFRÃ‰E",
+            f"ðŸ“„ Fichier : {original_name}",
+            ""
+        ]
+        if servers:
+            lines.append(f"ðŸ–¥ï¸ SERVEURS / COMPTES : {len(servers)}")
+            for i, server in enumerate(servers, 1):
+                lines.append("")
+                lines.append(f"â”â” Serveur {i} â”â”")
+                address = server.get("address") or server.get("server")
+                port = server.get("port")
+                protocol = server.get("protocol") or details.get("protocol")
+                if protocol:
+                    lines.append(f"Protocol : {protocol}")
+                if address is not None:
+                    lines.append(f"Address : {address}")
+                if port is not None:
+                    lines.append(f"Port : {port}")
+                uid = server.get("id") or server.get("uuid")
+                if uid:
+                    lines.append(f"UUID / ID : {uid}")
+                if server.get("encryption") not in (None, ""):
+                    lines.append(f"Encryption : {server.get('encryption')}")
+                if server.get("alterId") is not None:
+                    lines.append(f"AlterId : {server.get('alterId')}")
+                if server.get("level") is not None:
+                    lines.append(f"Level : {server.get('level')}")
+                if server.get("flow") not in (None, ""):
+                    lines.append(f"Flow : {server.get('flow')}")
+                if server.get("password"):
+                    lines.append(f"Password : {server.get('password')}")
         else:
-            await update.message.reply_text("❌ Code incorrect, réessaie.")
-            return True
+            lines.append("ðŸ–¥ï¸ Aucun serveur V2Ray/VLESS/VMess trouvÃ©.")
+        lines.append("")
+        lines.append("ðŸŒ TRANSPORT")
+        for key, label in [
+            ("network", "Transport"),
+            ("security", "Security"),
+            ("sni", "SNI"),
+            ("host", "WS Host"),
+            ("path", "WS Path"),
+            ("serviceName", "gRPC Service"),
+            ("flow", "Flow"),
+            ("fingerprint", "Fingerprint"),
+            ("publicKey", "Reality Public Key"),
+            ("shortId", "Reality Short ID"),
+            ("allowInsecure", "Allow Insecure"),
+        ]:
+            if key in details:
+                lines.append(f"{label} : {details[key]}")
+        proxy_fields = [
+            ("proxyHost", "Proxy Host"),
+            ("proxyPort", "Proxy Port"),
+            ("httpPort", "HTTP Proxy Port"),
+            ("socks5Port", "SOCKS5 Port"),
+            ("allowAccessFromLan", "LAN Access"),
+        ]
+        present_proxy = [(label, details[key]) for key, label in proxy_fields if key in details]
+        if present_proxy:
+            lines.append("")
+            lines.append("ðŸ”€ PROXY / LISTENERS")
+            for label, value in present_proxy:
+                lines.append(f"{label} : {value}")
+        if not servers and not present_proxy:
+            lines.append("")
+            lines.append("â„¹ï¸ Aucun paramÃ¨tre rÃ©seau supplÃ©mentaire lisible.")
+        lines += ["", "âœ… DÃ©chiffrement Dark Tunnel terminÃ©.", SIGNATURE]
+        await update.message.reply_text("\n".join(lines)[:4000])
     except Exception as e:
-        await update.message.reply_text(f"Erreur: {e}")
-        return True
+        await update.message.reply_text(
+            f"âŒ Erreur de dÃ©chiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
+        )
+    finally:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw = update.message.text or ""
@@ -769,39 +836,37 @@ async def handle_download(update,context,audio_only=False):
     fp,t,_ = await loop.run_in_executor(None,download_video,url,audio_only)
     if fp and os.path.exists(fp):
         try:
-                    try:
-        with open(fp,'rb') as f:
-            if audio_only:
-                await context.bot.send_audio(chat_id=update.effective_chat.id, audio=f)
-                            else:
-            await context.bot.send_video(chat_id=update.effective_chat.id, video=f)
-        os.remove(fp)
-    except Exception as e:
-        await update.message.reply_text(f"Erreur: {e}")
+            with open(fp,'rb') as f:
+                if audio_only:
+                    await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"))
+                else:
+                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"),supports_streaming=True)
+            os.remove(fp)
+        except Exception as e:
+            await update.message.reply_text(to_3d(f"{e}"))
+    else:
+        await update.message.reply_text(to_3d(f"{t}"))
 
-async def handle_photo(update, context):
+async def handle_photo(update,context):
     save_user(update.effective_user.id)
-    cap = update.message.caption or "C est quoi ca?"
+    cap = update.message.caption or "C est quel modele?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
         pf = await update.message.photo[-1].get_file()
         fp = "/tmp/analyse.jpg"
         await pf.download_to_drive(fp)
-        with open(fp, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
+        with open(fp,"rb") as f:
+            b64 = base64.b64encode(f.read()).decode('utf-8')
         if groq_client:
-            comp = groq_client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}]
-            )
+            comp = groq_client.chat.completions.create(model="qwen/qwen3.6-27b",messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],temperature=0.0,max_tokens=300)
             rep = comp.choices[0].message.content
-            await update.message.reply_text(rep)
+            await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
         else:
-            await update.message.reply_text("IA vision non configurée")
+            await update.message.reply_text("GROQ manquant")
     except Exception as e:
-        await update.message.reply_text(f"Erreur photo: {e}")
+        await update.message.reply_text(f"{str(e)[:500]}\n\n{SIGNATURE}")
 
-async def mp3_cmd(update, context):
+async def mp3_cmd(update,context):
     await handle_download(update,context,True)
 
 async def chat_gpt(update,context):
@@ -851,8 +916,7 @@ def main():
     app.add_handler(CommandHandler("audit", owner_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_password), group=0)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt), group=1)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
     print("V25.5 GO...")
     app.run_polling()
 
