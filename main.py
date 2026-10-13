@@ -769,37 +769,39 @@ async def handle_download(update,context,audio_only=False):
     fp,t,_ = await loop.run_in_executor(None,download_video,url,audio_only)
     if fp and os.path.exists(fp):
         try:
-            with open(fp,'rb') as f:
-                if audio_only:
-                    await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"))
-                else:
-                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"),supports_streaming=True)
-            os.remove(fp)
-        except Exception as e:
-            await update.message.reply_text(to_3d(f"{e}"))
-    else:
-        await update.message.reply_text(to_3d(f"{t}"))
+                    try:
+        with open(fp,'rb') as f:
+            if audio_only:
+                await context.bot.send_audio(chat_id=update.effective_chat.id, audio=f)
+                            else:
+            await context.bot.send_video(chat_id=update.effective_chat.id, video=f)
+        os.remove(fp)
+    except Exception as e:
+        await update.message.reply_text(f"Erreur: {e}")
 
-async def handle_photo(update,context):
+async def handle_photo(update, context):
     save_user(update.effective_user.id)
-    cap = update.message.caption or "C est quel modele?"
+    cap = update.message.caption or "C est quoi ca?"
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
         pf = await update.message.photo[-1].get_file()
         fp = "/tmp/analyse.jpg"
         await pf.download_to_drive(fp)
-        with open(fp,"rb") as f:
-            b64 = base64.b64encode(f.read()).decode('utf-8')
+        with open(fp, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
         if groq_client:
-            comp = groq_client.chat.completions.create(model="qwen/qwen3.6-27b",messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],temperature=0.0,max_tokens=300)
+            comp = groq_client.chat.completions.create(
+                model="llama-3.2-11b-vision-preview",
+                messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}]
+            )
             rep = comp.choices[0].message.content
-            await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+            await update.message.reply_text(rep)
         else:
-            await update.message.reply_text("GROQ manquant")
+            await update.message.reply_text("IA vision non configurée")
     except Exception as e:
-        await update.message.reply_text(f"{str(e)[:500]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"Erreur photo: {e}")
 
-async def mp3_cmd(update,context):
+async def mp3_cmd(update, context):
     await handle_download(update,context,True)
 
 async def chat_gpt(update,context):
