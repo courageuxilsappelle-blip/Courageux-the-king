@@ -10,7 +10,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print("=== V25.6 MULTI VPN + DARK TUNNEL DECODER ===")
+print("=== V25.4 DARK TUNNEL DECODER ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -27,7 +27,41 @@ def home():
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
+# === V26 PATCH MATRIXZAT - DEBUT ===
+MATRIX_MODULES = {}
+for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
+    try:
+        MATRIX_MODULES[mod_name] = __import__(mod_name)
+        print(f"Loaded {mod_name}")
+    except Exception as e:
+        pass
 
+def universal_matrix_decrypt(path):
+    from pathlib import Path
+    raw = Path(path).read_bytes()
+    out=[]
+    for name,mod in MATRIX_MODULES.items():
+        try:
+            func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None) or getattr(mod,"decrypt_file",None)
+            if func:
+                try:
+                    res = func(str(path))
+                except:
+                    res = func(raw)
+                out.append(f"[{name}] OK => {str(res)[:2000]}")
+        except Exception as e:
+            pass
+    return out
+
+async def owner_cmd(update,context):
+    save_user(update.effective_user.id)
+    try:
+        r=requests.get("https://api.github.com/repos/matrixzat/vpn-decryptor",timeout=10,headers={"User-Agent":"Mozilla/5.0"}).json()
+        txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\nStars: {r.get('stargazers_count')}\nURL: {r.get('html_url')}\nDesc: {r.get('description')}\n\nPublic open-source\n{SIGNATURE}"
+        await update.message.reply_text(txt)
+    except Exception as e:
+        await update.message.reply_text(f"err {e}")
+# === V26 PATCH FIN ===
 USERS_FILE = "users.txt"
 def save_user(uid):
     try:
@@ -659,37 +693,6 @@ def _extract_transport_details(cfg):
     }
     return {k: v for k, v in out.items() if v not in (None, "")}
 
-def decrypt_with_multivpn(path, fmt):
-    """Appelle le moteur Rust du projet Multi VPN Decryptor, exécuté localement."""
-    configured = os.getenv("MULTI_VPN_DECODER")
-    candidates = [Path(configured)] if configured else []
-    root = Path(__file__).resolve().parent
-    candidates.extend([
-        root / "decoder-cli" / "target" / "release" / "multi-vpn-decryptor-cli",
-        root / "decoder-cli" / "target" / "release" / "multi-vpn-decryptor-cli.exe",
-    ])
-    binary = next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
-    if binary is None:
-        raise RuntimeError(
-            "Le moteur Multi VPN Decryptor n'est pas construit. "
-            "Exécute d'abord ./build_decryptor.sh sur un serveur avec Rust/Cargo et Git."
-        )
-    result = subprocess.run(
-        [str(binary), fmt, str(path)],
-        capture_output=True,
-        text=True,
-        timeout=90,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "Échec du déchiffrement").strip()
-        raise RuntimeError(detail[:1200])
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Le décodeur a renvoyé un JSON invalide: {exc}") from exc
-
-
 async def handle_dark_tunnel(update, context):
     save_user(update.effective_user.id)
     document = update.message.document
@@ -698,23 +701,38 @@ async def handle_dark_tunnel(update, context):
     original_name = document.file_name or "config"
     normalized_name = _normalize_filename(original_name)
     lower_name = normalized_name.lower()
-    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark", ".ssc"))
+    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark", ".ssc", ".npvt", ".nm", ".sks", ".tnl", ".sip", ".hat", ".ziv", ".v2box", ".ini", ".txt"))
     path = os.path.join(
         tempfile.gettempdir(),
         f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
     )
-    output_path = None
     try:
         await update.message.reply_text("🔐 Analyse de la configuration...")
         tg_file = await document.get_file()
         await tg_file.download_to_drive(path)
+        # PATCH MATRIX
+        try:
+            raw = Path(path).read_bytes()
+            out=[]
+            for name,mod in MATRIX_MODULES.items():
+                try:
+                    func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None)
+                    if func:
+                        try: res = func(str(path))
+                        except: res = func(raw)
+                        out.append(f"[{name}] OK => {str(res)[:2000]}")
+                except: pass
+            if out:
+                await update.message.reply_text("\n---\n".join(out)[:4000])
+                return
+        except: pass
         if not accepted:
             raw_head = Path(path).read_bytes()[:512]
             try:
                 head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
             except Exception:
                 head = ""
-            accepted = ("ssc://" in head.lower()) or ("://" in head and ("eyJ" in head or "AH" in head))
+            accepted = "://" in head and ("eyJ" in head or "AH" in head)
         if not accepted:
             await update.message.reply_text(
                 f"❌ Format non reconnu : {original_name}\n"
@@ -722,38 +740,6 @@ async def handle_dark_tunnel(update, context):
             )
             return
         loop = asyncio.get_running_loop()
-        # Le moteur du site est un module Rust/WebAssembly sans API HTTP.
-        # On utilise donc le même code source Rust compilé en CLI local.
-        is_ssc_text = False
-        if lower_name.endswith(".txt"):
-            try:
-                is_ssc_text = Path(path).read_text(encoding="utf-8", errors="ignore").strip().lower().startswith("ssc://")
-            except Exception:
-                pass
-        if lower_name.endswith(".ehi"):
-            fmt = "ehi"
-        elif lower_name.endswith((".hc", ".hci")):
-            fmt = "hc"
-        elif lower_name.endswith(".ssc") or is_ssc_text:
-            fmt = "ssc"
-        else:
-            fmt = None
-
-        if fmt:
-            cfg = await loop.run_in_executor(None, decrypt_with_multivpn, path, fmt)
-            output_path = path + ".decrypted.txt"
-            with open(output_path, "w", encoding="utf-8") as out:
-                json.dump(cfg, out, ensure_ascii=False, indent=2)
-            caption = f"✅ {fmt.upper()} déchiffré par Multi VPN Decryptor\n{original_name}\n{SIGNATURE}"
-            with open(output_path, "rb") as out:
-                await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=out,
-                    filename=f"{Path(original_name).stem}.decrypted.json.txt",
-                    caption=caption[:1000],
-                )
-            return
-
         cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
         details = _extract_transport_details(cfg)
         servers = _extract_v2ray_configs(cfg)
@@ -831,12 +817,11 @@ async def handle_dark_tunnel(update, context):
             f"❌ Erreur de déchiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
         )
     finally:
-        for temporary_path in (path, output_path):
-            try:
-                if temporary_path and os.path.exists(temporary_path):
-                    os.remove(temporary_path)
-            except Exception:
-                pass
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
 
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
@@ -910,7 +895,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.6 MULTI VPN + DARK TUNNEL...")
+    print("Building V25.5 DARK TUNNEL...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -927,6 +912,8 @@ def main():
     app.add_handler(CommandHandler("exact", exact_cmd))
     app.add_handler(CommandHandler("today", today_cmd))
     app.add_handler(CommandHandler("tous", today_cmd))
+    app.add_handler(CommandHandler("owner", owner_cmd))
+    app.add_handler(CommandHandler("audit", owner_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
