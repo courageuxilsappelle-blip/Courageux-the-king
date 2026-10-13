@@ -1,19 +1,16 @@
 import base64
 import json
-import re
 import struct
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 import hashlib
 
-# Constantes publiques de l'app HTTP Injector v6+ (issues du projet MIT multi-vpn-decryptor-rs)
-# Ce sont des clés statiques de l'application, pas des secrets perso
 KEYS = [
     hashlib.sha256(b"httpinjector").digest(),
     hashlib.sha256(b"evozi").digest(),
+    hashlib.sha256(b"Shutdown key 1234567890123").digest(),
     b"0123456789abcdef0123456789abcdef",
     b"qwertyuiopasdfghjklzxcvbnmqwerty",
-    bytes.fromhex("53687574646f776e206b65792031323334353637383930313233"),
 ]
 
 IVS = [
@@ -31,7 +28,6 @@ def find_json(text: str):
         if start == -1 or end == 0:
             return None
         candidate = text[start:end]
-        # test si c'est du JSON valide
         json.loads(candidate)
         return candidate
     except:
@@ -48,7 +44,10 @@ def try_aes_decrypt(data: bytes):
             try:
                 if len(data) % 16!= 0:
                     continue
-                cipher = AES.new(key[:32], AES.MODE_CBC, iv)
+                k = key[:32]
+                if len(k) not in (16,24,32):
+                    k = hashlib.sha256(k).digest()
+                cipher = AES.new(k, AES.MODE_CBC, iv)
                 pt = cipher.decrypt(data)
                 try:
                     pt = unpad(pt, 16)
@@ -81,7 +80,6 @@ def extract_len_prefixed(data: bytes):
             except:
                 res.append(chunk)
         if res:
-            # plus long string = payload
             longest = max([r for r in res if isinstance(r, str)], key=len, default="")
             return longest
     except:
@@ -89,7 +87,6 @@ def extract_len_prefixed(data: bytes):
     return None
 
 def run(file_bytes: bytes):
-    # 1 - brut json
     try:
         txt = file_bytes.decode('utf-8', errors='ignore')
         j = find_json(txt)
@@ -98,7 +95,6 @@ def run(file_bytes: bytes):
     except:
         pass
 
-    # 2 - len prefixed (format ehi)
     lp = extract_len_prefixed(file_bytes)
     if lp:
         j = find_json(lp)
@@ -116,7 +112,6 @@ def run(file_bytes: bytes):
         except:
             pass
 
-    # 3 - fichier entier base64
     try:
         b64txt = file_bytes.decode('utf-8').strip()
         dec = base64.b64decode(b64txt)
@@ -130,12 +125,10 @@ def run(file_bytes: bytes):
     except:
         pass
 
-    # 4 - AES direct sur fichier
     aes_res = try_aes_decrypt(file_bytes[:len(file_bytes)//16*16])
     if aes_res:
         return aes_res
 
-    # 5 - split par : (ancien format ehi)
     try:
         txt = file_bytes.decode('utf-8', errors='ignore')
         if ":" in txt:
@@ -147,7 +140,6 @@ def run(file_bytes: bytes):
                     j = find_json(t)
                     if j:
                         return j
-                    # essaie AES sur ce morceau
                     aes_res = try_aes_decrypt(dec)
                     if aes_res:
                         return aes_res
@@ -158,7 +150,6 @@ def run(file_bytes: bytes):
 
     return None
 
-# Wrappers compatibles avec ton main.py
 def decrypt_ehi(data: bytes):
     return run(data)
 
