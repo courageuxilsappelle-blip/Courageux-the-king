@@ -85,7 +85,7 @@ def get_total_users():
 def to_3d(t):
     try:
         n = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        b = "ð—”ð—•ð—–ð——ð—˜ð—™ð—šð—›ð—œð—ð—žð—Ÿð— ð—¡ð—¢ð—£ð—¤ð—¥ð—¦ð—§ð—¨ð—©ð—ªð—«ð—¬ð—­ð—®ð—¯ð—°ð—±ð—²ð—³ð—´ð—µð—¶ð—·ð—¸ð—¹ð—ºð—»ð—¼ð—½ð—¾ð—¿ð˜€ð˜ð˜‚ð˜ƒð˜„ð˜…ð˜†ð˜‡ðŸ¬ðŸ­ðŸ®ðŸ¯ðŸ°ðŸ±ðŸ²ðŸ³ðŸ´ðŸµ"
+        b = "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
         return "".join([b[n.index(c)] if c in n else c for c in t])
     except:
         return t
@@ -298,7 +298,7 @@ def create_score_image(t):
 
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\nðŸ“¸ Photo\nðŸ“¥ Lien YT/TikTok\nðŸŽ¯ /exact Team vs Team\nðŸ”¥ /today\nðŸ” /scan host\nðŸ“š /pdf sujet\nðŸ” /vmess /stats\nðŸ›¡ï¸ /bl ip = blacklist check"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
@@ -315,10 +315,10 @@ async def vmess_cmd(update,context):
 async def pdf_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("ðŸ“š /pdf + sujet Ex: /pdf guide business")
+        await update.message.reply_text("📚 /pdf + sujet Ex: /pdf guide business")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"ðŸ“š Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
     try:
         prompt = f"Ecris un livre complet en francais sur: {sujet}. 5 chapitres, intro, conclusion, conseils. 1500 mots minimum."
         comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.7,max_tokens=4000)
@@ -337,7 +337,7 @@ async def pdf_cmd(update,context):
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("ðŸ“¡ /mtr 1.1.1.1 8.8.8.8")
+        await update.message.reply_text("📡 /mtr 1.1.1.1 8.8.8.8")
         return
     raw = " ".join(context.args)
     ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
@@ -357,7 +357,7 @@ async def mtr_cmd(update,context):
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("ðŸ” /scan host")
+        await update.message.reply_text("🔍 /scan host")
         return
     host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -394,24 +394,24 @@ async def scan200_cmd(update,context):
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("ðŸ›¡ï¸ Usage: /bl 34.120.159.235")
+        await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
         return
     ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    # Si on donne un host, on rÃ©sout en IP
+    # Si on donne un host, on résout en IP
     try:
         if not re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
             ip = socket.gethostbyname(ip)
     except:
         pass
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"ðŸ›¡ï¸ VÃ©rif blacklist {ip}... 5s")
+    await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
     loop = asyncio.get_event_loop()
     listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
 
     if not listed:
-        txt = f"âœ… IP Not Listed (Good!)\n\nIP: {ip}\n"
-        txt += f"Status: PROPRE âœ…\n"
-        txt += f"Listes checkÃ©es: {total}\n"
+        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\n"
+        txt += f"Status: PROPRE ✅\n"
+        txt += f"Listes checkées: {total}\n"
         txt += f"Propres: {clean}/{total}\n\n"
         txt += f"all.s5h.net: Not Listed\n"
         txt += f"b.barracudacentral.org: Not Listed\n"
@@ -419,17 +419,17 @@ async def bl_cmd(update,context):
         txt += f"proxy.bl.gweep.ca: Not Listed (pas proxy spam)\n"
         txt += f"\n{SIGNATURE}"
     else:
-        txt = f"âŒ IP Listed (Bad!)\n\nIP: {ip}\n"
-        txt += f"BlacklistÃ©e sur {len(listed)}/{total}:\n"
+        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\n"
+        txt += f"Blacklistée sur {len(listed)}/{total}:\n"
         for bl in listed:
-            txt += f"âŒ {bl}\n"
+            txt += f"❌ {bl}\n"
         txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
 
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("ðŸŽ¯ /exact Man City vs Arsenal")
+        await update.message.reply_text("🎯 /exact Man City vs Arsenal")
         return
     pred = predict_exact_score(" ".join(context.args))
     try:
@@ -493,7 +493,7 @@ def _aes_cfb_decrypt(data, key):
                 capture_output=True, text=True, timeout=15
             )
             if p.returncode!= 0:
-                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a Ã©chouÃ©")
+                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
             return Path(out_name).read_bytes()
         finally:
             for f in (in_name, out_name):
@@ -693,35 +693,103 @@ def _extract_transport_details(cfg):
     }
     return {k: v for k, v in out.items() if v not in (None, "")}
 
+# === MAPPING EXTENSION -> MODULE ===
+EXT_TO_MODULES = {
+    ".plus": ["DARKTUNNEL"],
+    ".dark": ["DARKTUNNEL"],
+    ".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],
+    ".hcc": ["HTTPCUSTOM"],
+    ".npvt": ["NPVTUNNEL"],
+    ".npvs": ["NPVTUNNEL"],
+    ".ehi": ["HTTPINJECTOR"],
+    ".ehi2": ["HTTPINJECTOR"],
+    ".sks": ["SOCKSHTTP", "SocksIP"],
+    ".ssc": ["SSCCUSTOM"],
+    ".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],
+    ".hat": ["Ha_Tunnel"],
+    ".hatu": ["Ha_Tunnel"],
+    ".ziv": ["ZIVPN"],
+    ".v2box": ["V2BOX"],
+    ".ini": ["netmod_decoder", "NETMOD"],
+    ".sip": ["SocksIP"],
+}
+
+def _is_valid_result(res):
+    if res is None: return False
+    s = str(res).strip()
+    return s and s!= "None" and s!= "[]" and s!= "{}" and len(s) > 4
+
 async def handle_dark_tunnel(update, context):
     save_user(update.effective_user.id)
-    document = update.message.document
-    if not document:
-        return
-    original_name = document.file_name or "config"
-    normalized_name = _normalize_filename(original_name)
-    lower_name = normalized_name.lower()
-    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark", ".ssc", ".npvt", ".nm", ".sks", ".tnl", ".sip", ".hat", ".ziv", ".v2box", ".ini", ".txt"))
-    path = os.path.join(
-        tempfile.gettempdir(),
-        f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
-    )
+    doc = update.message.document
+    if not doc: return
+    original_name = doc.file_name or "config"
+    lower_name = _normalize_filename(original_name).lower()
+    ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
+    path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.path.basename(lower_name)}")
+
     try:
-        await update.message.reply_text("ðŸ” Analyse de la configuration...")
-        tg_file = await document.get_file()
+        await update.message.reply_text(f"🔐 Analyse {ext} : {original_name}...")
+        tg_file = await doc.get_file()
         await tg_file.download_to_drive(path)
-        # PATCH MATRIX
+
+        # 1. PLUS = decodeur natif, on ne touche à rien d'autre
+        if ext in [".plus", ".dark"]:
+            loop = asyncio.get_running_loop()
+            cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
+            details = _extract_transport_details(cfg)
+            servers = _extract_v2ray_configs(cfg)
+            lines = [f"🔐 DARK TUNNEL — {original_name}", f"🖥️ SERVEURS: {len(servers)}"]
+            for i,s in enumerate(servers,1):
+                lines.append(f"\n━━ Serveur {i} ━━")
+                if s.get("address"): lines.append(f"Address: {s.get('address')}")
+                if s.get("port"): lines.append(f"Port: {s.get('port')}")
+                if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
+            lines.append(f"\n🌐 {details}")
+            lines.append(SIGNATURE)
+            await update.message.reply_text("\n".join(lines)[:4000])
+            return
+
+        # 2. Autres extensions = on teste SEULEMENT le bon module
+        candidates = EXT_TO_MODULES.get(ext, [])
+        if not candidates:
+            candidates = list(MATRIX_MODULES.keys()) # fallback si extension inconnue
+
+        valid_out = []
+        raw = Path(path).read_bytes()
+        for mod_name in candidates:
+            mod = MATRIX_MODULES.get(mod_name)
+            if not mod: continue
+            try:
+                func = getattr(mod, "decrypt", None) or getattr(mod, "decode", None) or getattr(mod, "decrypt_file", None)
+                if not func: continue
+                try: res = func(str(path))
+                except: res = func(raw)
+                if _is_valid_result(res):
+                    valid_out.append(f"[{mod_name}] {ext} OK =>\n{str(res)[:3500]}")
+                    break # on s'arrête dès qu'on a trouvé le bon
+            except Exception as e:
+                print(f"{mod_name} fail: {e}")
+                continue
+
+        if valid_out:
+            await update.message.reply_text("\n---\n".join(valid_out)[:4000])
+            return
+
+        # 3. Si rien n'a marché
+        missing = ", ".join(candidates)
+        await update.message.reply_text(
+            f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\n"
+            f"Modules testés: {missing}\n"
+            f"Vérifie que le fichier {candidates[0]}.py est bien uploadé à la racine de ton GitHub sur Render.\n{SIGNATURE}"
+        )
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
+    finally:
         try:
-            raw = Path(path).read_bytes()
-            out=[]
-            for name,mod in MATRIX_MODULES.items():
-                try:
-                    func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None)
-                    if func:
-                        try: res = func(str(path))
-                        except: res = func(raw)
-                        out.append(f"[{name}] OK => {str(res)[:2000]}")
-                except: pass
+            if os.path.exists(path): os.remove(path)
+        except: pass
             if out:
                 await update.message.reply_text("\n---\n".join(out)[:4000])
                 return
@@ -735,8 +803,8 @@ async def handle_dark_tunnel(update, context):
             accepted = "://" in head and ("eyJ" in head or "AH" in head)
         if not accepted:
             await update.message.reply_text(
-                f"âŒ Format non reconnu : {original_name}\n"
-                "Formats acceptÃ©s :.plus /.ð’‘ð’ð’–ð’” /.dark /.ehi /.hc /.hci"
+                f"❌ Format non reconnu : {original_name}\n"
+                "Formats acceptés :.plus /.𝒑𝒍𝒖𝒔 /.dark /.ehi /.hc /.hci"
             )
             return
         loop = asyncio.get_running_loop()
@@ -744,15 +812,15 @@ async def handle_dark_tunnel(update, context):
         details = _extract_transport_details(cfg)
         servers = _extract_v2ray_configs(cfg)
         lines = [
-            "ðŸ” DARK TUNNEL â€” CONFIGURATION DÃ‰CHIFFRÃ‰E",
-            f"ðŸ“„ Fichier : {original_name}",
+            "🔐 DARK TUNNEL — CONFIGURATION DÉCHIFFRÉE",
+            f"📄 Fichier : {original_name}",
             ""
         ]
         if servers:
-            lines.append(f"ðŸ–¥ï¸ SERVEURS / COMPTES : {len(servers)}")
+            lines.append(f"🖥️ SERVEURS / COMPTES : {len(servers)}")
             for i, server in enumerate(servers, 1):
                 lines.append("")
-                lines.append(f"â”â” Serveur {i} â”â”")
+                lines.append(f"━━ Serveur {i} ━━")
                 address = server.get("address") or server.get("server")
                 port = server.get("port")
                 protocol = server.get("protocol") or details.get("protocol")
@@ -776,9 +844,9 @@ async def handle_dark_tunnel(update, context):
                 if server.get("password"):
                     lines.append(f"Password : {server.get('password')}")
         else:
-            lines.append("ðŸ–¥ï¸ Aucun serveur V2Ray/VLESS/VMess trouvÃ©.")
+            lines.append("🖥️ Aucun serveur V2Ray/VLESS/VMess trouvé.")
         lines.append("")
-        lines.append("ðŸŒ TRANSPORT")
+        lines.append("🌐 TRANSPORT")
         for key, label in [
             ("network", "Transport"),
             ("security", "Security"),
@@ -804,17 +872,17 @@ async def handle_dark_tunnel(update, context):
         present_proxy = [(label, details[key]) for key, label in proxy_fields if key in details]
         if present_proxy:
             lines.append("")
-            lines.append("ðŸ”€ PROXY / LISTENERS")
+            lines.append("🔀 PROXY / LISTENERS")
             for label, value in present_proxy:
                 lines.append(f"{label} : {value}")
         if not servers and not present_proxy:
             lines.append("")
-            lines.append("â„¹ï¸ Aucun paramÃ¨tre rÃ©seau supplÃ©mentaire lisible.")
-        lines += ["", "âœ… DÃ©chiffrement Dark Tunnel terminÃ©.", SIGNATURE]
+            lines.append("ℹ️ Aucun paramètre réseau supplémentaire lisible.")
+        lines += ["", "✅ Déchiffrement Dark Tunnel terminé.", SIGNATURE]
         await update.message.reply_text("\n".join(lines)[:4000])
     except Exception as e:
         await update.message.reply_text(
-            f"âŒ Erreur de dÃ©chiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
+            f"❌ Erreur de déchiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
         )
     finally:
         try:
