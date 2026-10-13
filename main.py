@@ -710,7 +710,8 @@ async def handle_dark_tunnel(update, context):
         await update.message.reply_text("🔐 Analyse de la configuration...")
         tg_file = await document.get_file()
         await tg_file.download_to_drive(path)
-        # PATCH MATRIX
+        
+        # PATCH MATRIX V5 - avec support mot de passe
         try:
             raw = Path(path).read_bytes()
             out=[]
@@ -718,111 +719,85 @@ async def handle_dark_tunnel(update, context):
                 try:
                     func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None)
                     if func:
-                        try: res = func(str(path))
-                        except: res = func(raw)
-                        out.append(f"[{name}] OK => {str(res)[:2000]}")
+                        try: 
+                            res = func(str(path))
+                        except: 
+                            try: res = func(raw)
+                            except: res = func(str(path), None)
+                        if res:
+                            out.append(f"[{name}] OK => {str(res)[:2000]}")
                 except: pass
+            
             if out:
                 await update.message.reply_text("\n---\n".join(out)[:4000])
                 return
-        except: pass
+            
+            # Si rien trouvé = fichier protégé par mot de passe
+            if lower_name.endswith(".hc"):
+                context.user_data['pending_hc'] = path
+                await update.message.reply_text(
+                    "🔐 Ce fichier HC est protégé par un mot de passe.\n\n"
+                    "Envoie le code que tu as mis dans HTTP Custom et je vais le déchiffrer."
+                )
+                return
+        except Exception as e:
+            pass
+
         if not accepted:
             raw_head = Path(path).read_bytes()[:512]
             try:
                 head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
-            except Exception:
+            except:
                 head = ""
             accepted = "://" in head and ("eyJ" in head or "AH" in head)
         if not accepted:
-            await update.message.reply_text(
-                f"❌ Format non reconnu : {original_name}\n"
-                "Formats acceptés :.plus /.𝒑𝒍𝒖𝒔 /.dark /.ehi /.hc /.hci"
-            )
+            await update.message.reply_text(f"❌ Format non reconnu : {original_name}")
             return
+        
         loop = asyncio.get_running_loop()
         cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
+        # ... ton code existant pour afficher le config ...
         details = _extract_transport_details(cfg)
         servers = _extract_v2ray_configs(cfg)
-        lines = [
-            "🔐 DARK TUNNEL — CONFIGURATION DÉCHIFFRÉE",
-            f"📄 Fichier : {original_name}",
-            ""
-        ]
-        if servers:
-            lines.append(f"🖥️ SERVEURS / COMPTES : {len(servers)}")
-            for i, server in enumerate(servers, 1):
-                lines.append("")
-                lines.append(f"━━ Serveur {i} ━━")
-                address = server.get("address") or server.get("server")
-                port = server.get("port")
-                protocol = server.get("protocol") or details.get("protocol")
-                if protocol:
-                    lines.append(f"Protocol : {protocol}")
-                if address is not None:
-                    lines.append(f"Address : {address}")
-                if port is not None:
-                    lines.append(f"Port : {port}")
-                uid = server.get("id") or server.get("uuid")
-                if uid:
-                    lines.append(f"UUID / ID : {uid}")
-                if server.get("encryption") not in (None, ""):
-                    lines.append(f"Encryption : {server.get('encryption')}")
-                if server.get("alterId") is not None:
-                    lines.append(f"AlterId : {server.get('alterId')}")
-                if server.get("level") is not None:
-                    lines.append(f"Level : {server.get('level')}")
-                if server.get("flow") not in (None, ""):
-                    lines.append(f"Flow : {server.get('flow')}")
-                if server.get("password"):
-                    lines.append(f"Password : {server.get('password')}")
-        else:
-            lines.append("🖥️ Aucun serveur V2Ray/VLESS/VMess trouvé.")
-        lines.append("")
-        lines.append("🌐 TRANSPORT")
-        for key, label in [
-            ("network", "Transport"),
-            ("security", "Security"),
-            ("sni", "SNI"),
-            ("host", "WS Host"),
-            ("path", "WS Path"),
-            ("serviceName", "gRPC Service"),
-            ("flow", "Flow"),
-            ("fingerprint", "Fingerprint"),
-            ("publicKey", "Reality Public Key"),
-            ("shortId", "Reality Short ID"),
-            ("allowInsecure", "Allow Insecure"),
-        ]:
-            if key in details:
-                lines.append(f"{label} : {details[key]}")
-        proxy_fields = [
-            ("proxyHost", "Proxy Host"),
-            ("proxyPort", "Proxy Port"),
-            ("httpPort", "HTTP Proxy Port"),
-            ("socks5Port", "SOCKS5 Port"),
-            ("allowAccessFromLan", "LAN Access"),
-        ]
-        present_proxy = [(label, details[key]) for key, label in proxy_fields if key in details]
-        if present_proxy:
-            lines.append("")
-            lines.append("🔀 PROXY / LISTENERS")
-            for label, value in present_proxy:
-                lines.append(f"{label} : {value}")
-        if not servers and not present_proxy:
-            lines.append("")
-            lines.append("ℹ️ Aucun paramètre réseau supplémentaire lisible.")
-        lines += ["", "✅ Déchiffrement Dark Tunnel terminé.", SIGNATURE]
+        lines = [f"🔐 DARK TUNNEL — {original_name}", f"Serveurs: {len(servers)}"]
+        for s in servers[:3]:
+            lines.append(f"- {s.get('address')}:{s.get('port')}")
+        lines.append(SIGNATURE)
         await update.message.reply_text("\n".join(lines)[:4000])
-    except Exception as e:
-        await update.message.reply_text(
-            f"❌ Erreur de déchiffrement : {str(e)[:900]}\n\n{SIGNATURE}"
-        )
-    finally:
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
 
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erreur: {str(e)[:900]}\n\n{SIGNATURE}")
+    finally:
+        if 'pending_hc' not in context.user_data:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except:
+                pass
+
+async def handle_password(update, context):
+    if 'pending_hc' not in context.user_data:
+        return False # laisse chat_gpt gérer
+    path = context.user_data['pending_hc']
+    pwd = update.message.text.strip()
+    if len(pwd) > 50 or len(pwd) < 1:
+        return False
+    await update.message.reply_text(f"🔑 Test code `{pwd}`...")
+    try:
+        import HTTPCUSTOM
+        res = HTTPCUSTOM.decrypt(path, password=pwd)
+        if res:
+            await update.message.reply_text(f"[HTTPCUSTOM] 🔓 OK avec code\n{json.dumps(res, indent=2)[:4000]}")
+            del context.user_data['pending_hc']
+            try: os.remove(path)
+            except: pass
+            return True
+        else:
+            await update.message.reply_text("❌ Code incorrect, réessaie.")
+            return True
+    except Exception as e:
+        await update.message.reply_text(f"Erreur: {e}")
+        return True
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw = update.message.text or ""
@@ -916,7 +891,8 @@ def main():
     app.add_handler(CommandHandler("audit", owner_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_password), group=0)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt), group=1)
     print("V25.5 GO...")
     app.run_polling()
 
