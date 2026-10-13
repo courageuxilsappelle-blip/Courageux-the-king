@@ -694,101 +694,59 @@ def _extract_transport_details(cfg):
     return {k: v for k, v in out.items() if v not in (None, "")}
 
 async def handle_dark_tunnel(update, context):
-    save_user(update.effective_user.id)
-    document = update.message.document
-    if not document:
+    message = update.message
+    doc = message.document
+    if not doc:
         return
-    original_name = document.file_name or "config"
-    normalized_name = _normalize_filename(original_name)
-    lower_name = normalized_name.lower()
-    accepted = lower_name.endswith((".plus", ".ehi", ".hc", ".hci", ".dark", ".ssc", ".npvt", ".nm", ".sks", ".tnl", ".sip", ".hat", ".ziv", ".v2box", ".ini", ".txt"))
-    path = os.path.join(
-        tempfile.gettempdir(),
-        f"dt_{update.effective_user.id}_{os.getpid()}_{os.path.basename(normalized_name)}"
-    )
+
+    path = f"/tmp/{doc.file_name}"
+    file = await context.bot.get_file(doc.file_id)
+    await file.download_to_drive(path)
+
     try:
-        await update.message.reply_text("🔐 Analyse de la configuration...")
-        tg_file = await document.get_file()
-        await tg_file.download_to_drive(path)
-        
-        # PATCH MATRIX V5 - avec support mot de passe
-        try:
-            raw = Path(path).read_bytes()
-            out=[]
-            for name,mod in MATRIX_MODULES.items():
-                try:
-                    func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None)
-                    if func:
-                        try: 
-                            res = func(str(path))
-                        except: 
-                            try: res = func(raw)
-                            except: res = func(str(path), None)
-                        if res:
-                            out.append(f"[{name}] OK => {str(res)[:2000]}")
-                except: pass
-            
-            if out:
-                await update.message.reply_text("\n---\n".join(out)[:4000])
-                return
-            
-            # Si rien trouvé = fichier protégé par mot de passe
-            if lower_name.endswith(".hc"):
+        # 1. On essaie sans mot de passe d'abord
+        from HTTPCUSTOM import decrypt
+        result = decrypt(path, password=None)
+
+        # Si result est None -> fichier protégé
+        if result is None:
+            # 2. Est-ce que l'utilisateur a mis le code en légende du fichier?
+            caption_pwd = None
+            if message.caption:
+                caption_pwd = message.caption.strip().split()[0] # prend le 1er mot de la légende
+
+            # Si pas de légende, on regarde s'il a mis le code juste après dans pending
+            pwd_to_try = caption_pwd
+
+            if not pwd_to_try:
+                # Pas de mot de passe fourni, on demande
                 context.user_data['pending_hc'] = path
-                await update.message.reply_text(
-                    "🔐 Ce fichier HC est protégé par un mot de passe.\n\n"
-                    "Envoie le code que tu as mis dans HTTP Custom et je vais le déchiffrer."
+                await message.reply_text(
+                    "🔒 Ce fichier HC est protégé par un mot de passe.\n\n"
+                    "Envoie le code que tu as mis dans HTTP Custom et je vais le déchiffrer.\n\n"
+                    "💡 Astuce: Tu peux aussi renvoyer directement le fichier avec le code en légende."
                 )
                 return
-        except Exception as e:
-            pass
 
-        if not accepted:
-            raw_head = Path(path).read_bytes()[:512]
-            try:
-                head = unicodedata.normalize("NFKC", raw_head.decode("utf-8", "ignore"))
-            except:
-                head = ""
-            accepted = "://" in head and ("eyJ" in head or "AH" in head)
-        if not accepted:
-            await update.message.reply_text(f"❌ Format non reconnu : {original_name}")
-            return
-        
-        loop = asyncio.get_running_loop()
-        cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
-        # ... ton code existant pour afficher le config ...
-        details = _extract_transport_details(cfg)
-        servers = _extract_v2ray_configs(cfg)
-        lines = [f"🔐 DARK TUNNEL — {original_name}", f"Serveurs: {len(servers)}"]
-        for s in servers[:3]:
-            lines.append(f"- {s.get('address')}:{s.get('port')}")
-        lines.append(SIGNATURE)
-        await update.message.reply_text("\n".join(lines)[:4000])
+            # 3. On a un code en légende, on teste direct
+            await message.reply_text(f"🔑 Test code `{pwd_to_try}` en légende...", parse_mode='Markdown')
+            result = decrypt(path, password=pwd_to_try)
 
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erreur: {str(e)[:900]}\n\n{SIGNATURE}")
+            if result is None:
+                await message.reply_text(f"❌ Code `{pwd_to_try}` incorrect, réessaie.")
+                context.user_data['pending_hc'] = path
+                return
+            else:
+                # OK déchiffré avec légende
+                await message.reply_text(f"✅ Déchiffré avec le code `{pwd_to_try}`!")
+                # continue pour afficher le résultat en bas
+
+        # Si on arrive ici, result contient la config déchiffrée
+        #... ton code d'affichage habituel (analyse, envoi PDF etc)...
+        await message.reply_text(f"🔓 Config: {str(result)[:1000]}")
+
     finally:
         if 'pending_hc' not in context.user_data:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except:
-                pass
-
-async def handle_password(update, context):
-    if 'pending_hc' not in context.user_data:
-        return False # laisse chat_gpt gérer
-    path = context.user_data['pending_hc']
-    pwd = update.message.text.strip()
-    if len(pwd) > 50 or len(pwd) < 1:
-        return False
-    await update.message.reply_text(f"🔑 Test code `{pwd}`...")
-    try:
-        import HTTPCUSTOM
-        res = HTTPCUSTOM.decrypt(path, password=pwd)
-        if res:
-            await update.message.reply_text(f"[HTTPCUSTOM] 🔓 OK avec code\n{json.dumps(res, indent=2)[:4000]}")
-            del context.user_data['pending_hc']
             try: os.remove(path)
             except: pass
             return True
