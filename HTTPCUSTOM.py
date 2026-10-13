@@ -1,97 +1,75 @@
-import os, json, re, hashlib, base64
-from pathlib import Path
+import json, base64, hashlib
+from Crypto.Cipher import AES
 
-try:
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import unpad
-    HAS_CRYPTO = True
-except:
-    HAS_CRYPTO = False
-    AES = None
-
-KEYS = [b"hc_reborn_4", b"hc_reborn___7", b"hc_reborn_7", b"hc_reborn_tester_5"]
-
-def xor_decrypt(data: bytes, password: str):
-    pwd = password.encode()
-    return bytes([b ^ pwd[i % len(pwd)] for i, b in enumerate(data)])
-
-def _try_extract_json(txt: str):
-    m = re.search(r'\{.*\}', txt, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except: pass
-    return None
-
-def _aes_try(raw: bytes):
-    if not HAS_CRYPTO: return None
-    for key_str in KEYS:
-        for key_len in [16,32]:
-            variants = [
-                (key_str * ((key_len // len(key_str))+1))[:key_len],
-                hashlib.md5(key_str).digest(),
-                hashlib.sha256(key_str).digest()[:key_len]
-            ]
-            for key in variants:
-                for mode in ["ECB","CBC"]:
-                    try:
-                        if mode=="ECB":
-                            cipher=AES.new(key, AES.MODE_ECB)
-                            pt=unpad(cipher.decrypt(raw),16)
-                        else:
-                            if len(raw)<=16: continue
-                            iv=raw[:16]
-                            cipher=AES.new(key, AES.MODE_CBC, iv)
-                            pt=unpad(cipher.decrypt(raw[16:]),16)
-                        if b'{' in pt:
-                            j=_try_extract_json(pt.decode('utf-8','ignore'))
-                            if j: return j
-                    except: continue
-    return None
-
-def decrypt(path_or_bytes, password=None):
-    if isinstance(path_or_bytes, (str, Path)) and os.path.exists(str(path_or_bytes)):
-        raw = Path(path_or_bytes).read_bytes()
-    elif isinstance(path_or_bytes, bytes):
-        raw = path_or_bytes
-    else:
-        raw = Path(path_or_bytes).read_bytes()
-
-    # Si mot de passe fourni, dé-XOR d'abord
-    if password:
-        try:
-            raw = xor_decrypt(raw, password)
-            # après XOR, le fichier devient hex ou base64
-            try:
-                txt = raw.decode('utf-8','ignore').strip()
-                # si c'est hex
-                if all(c in "0123456789abcdefABCDEF" for c in txt[:100]):
-                    raw = bytes.fromhex(txt)
-                else:
-                    txt += '='*(-len(txt)%4)
-                    raw = base64.b64decode(txt)
-            except:
-                pass
-        except:
-            pass
-
-    # 1. ancien format texte
+def decrypt(path, password=None):
     try:
-        txt = raw.decode('utf-8','ignore')
-        j=_try_extract_json(txt)
-        if j: return j
-        # base64 en boucle
-        for _ in range(4):
-            txt=txt.strip()
-            txt+='='*(-len(txt)%4)
-            try:
-                d=base64.b64decode(txt)
-                s=d.decode('utf-8','ignore')
-                j=_try_extract_json(s)
-                if j: return j
-                txt=s
-            except: break
-    except: pass
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            data = json.load(f)
+        
+        # Si pas chiffré
+        if "data" not in str(data) and "payload" not in str(data).lower():
+            # essaie de retourner tel quel
+            return data
 
-    # 2. nouveau format binaire
-    return _aes_try(raw)
+        # Récupère la partie chiffrée (différentes versions HC)
+        enc_b64 = None
+        if isinstance(data, dict):
+            enc_b64 = data.get('data') or data.get('payload') or data.get('d')
+        
+        if not enc_b64:
+            # fichier non chiffré
+            return data
+
+        enc = base64.b64decode(enc_b64)
+
+        if not password:
+            return None
+
+        # ESSAIE 1 : password direct en clé AES (16/24/32 bytes paddé)
+        # ESSAIE 2 : SHA256(password)
+        # ESSAIE 3 : MD5(password)
+        tries = []
+        pwd_bytes = password.strip().encode()
+        tries.append(hashlib.sha256(pwd_bytes).digest()) # le plus courant
+        tries.append(hashlib.md5(pwd_bytes).digest())
+        tries.append(hashlib.sha256(pwd_bytes.lower()).digest())
+        # paddé à 32
+        tries.append(pwd_bytes.ljust(32, b'\0')[:32])
+
+        for key in tries:
+            try:
+                # HC utilise souvent AES CBC avec IV au début ou ECB
+                # Try ECB
+                cipher = AES.new(key, AES.MODE_ECB)
+                dec = cipher.decrypt(enc)
+                # enlève padding
+                dec = dec.rstrip(b'\x00').rstrip(b'\x08').rstrip(b'\x04').rstrip(b'\x10')
+                # essaie PKCS7
+                try:
+                    pad_len = dec[-1]
+                    if pad_len < 32:
+                        dec = dec[:-pad_len]
+                except: pass
+                text = dec.decode('utf-8', errors='ignore')
+                if '{' in text and '}' in text:
+                    return json.loads(text[text.find('{'):text.rfind('}')+1])
+            except: continue
+
+            try:
+                # Try CBC IV = 16 premiers bytes de enc
+                iv = enc[:16]
+                ct = enc[16:]
+                cipher = AES.new(key, AES.MODE_CBC, iv)
+                dec = cipher.decrypt(ct)
+                pad_len = dec[-1]
+                if pad_len < 32:
+                    dec = dec[:-pad_len]
+                text = dec.decode('utf-8', errors='ignore')
+                if '{' in text:
+                    return json.loads(text[text.find('{'):text.rfind('}')+1])
+            except: continue
+        
+        return None
+    except Exception as e:
+        print(f"DECRYPT ERROR: {e}")
+        return None
