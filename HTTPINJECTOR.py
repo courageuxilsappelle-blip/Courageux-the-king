@@ -1,9 +1,8 @@
 import base64
 import json
-import struct
+import hashlib
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
-import hashlib
 
 KEYS = [
     hashlib.sha256(b"httpinjector").digest(),
@@ -25,25 +24,19 @@ def find_json(text: str):
     try:
         start = text.find("{")
         end = text.rfind("}") + 1
-        if start == -1 or end == 0:
-            return None
-        candidate = text[start:end]
-        json.loads(candidate)
-        return candidate
+        cand = text[start:end]
+        json.loads(cand)
+        return cand
     except:
-        try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            return text[start:end] if start!= -1 else None
-        except:
-            return None
+        return None
 
 def try_aes_decrypt(data: bytes):
+    if len(data) < 16:
+        return None
+    data = data[:len(data)//16*16]
     for key in KEYS:
         for iv in IVS:
             try:
-                if len(data) % 16!= 0:
-                    continue
                 k = key[:32]
                 if len(k) not in (16,24,32):
                     k = hashlib.sha256(k).digest()
@@ -56,105 +49,50 @@ def try_aes_decrypt(data: bytes):
                 txt = pt.decode('utf-8', errors='ignore')
                 if "{" in txt:
                     j = find_json(txt)
-                    if j:
+                    if j and len(j) > 30:
                         return j
             except:
                 continue
     return None
 
-def extract_len_prefixed(data: bytes):
-    res = []
-    off = 0
-    try:
-        while off + 4 <= len(data):
-            l = struct.unpack(">I", data[off:off+4])[0]
-            off += 4
-            if l > 50000 or l <= 0:
-                break
-            if off + l > len(data):
-                break
-            chunk = data[off:off+l]
-            off += l
-            try:
-                res.append(chunk.decode('utf-8'))
-            except:
-                res.append(chunk)
-        if res:
-            longest = max([r for r in res if isinstance(r, str)], key=len, default="")
-            return longest
-    except:
-        pass
-    return None
-
 def run(file_bytes: bytes):
+    # 1 - direct json
     try:
-        txt = file_bytes.decode('utf-8', errors='ignore')
-        j = find_json(txt)
-        if j and len(j) > 20:
-            return j
-    except:
-        pass
-
-    lp = extract_len_prefixed(file_bytes)
-    if lp:
-        j = find_json(lp)
+        j = find_json(file_bytes.decode('utf-8', errors='ignore'))
         if j:
             return j
+    except:
+        pass
+
+    # 2 - format v6.5.0 : payload commence à 441 (après header ehi + version + bloc 417)
+    # Ton fichier HHHTO.txt fait 11496 octets, le gros blob est à 441
+    offsets_to_try = [441, 20, 24, 0]
+    for off in offsets_to_try:
+        if off >= len(file_bytes):
+            continue
+        chunk = file_bytes[off:]
+        # test AES direct
+        res = try_aes_decrypt(chunk)
+        if res:
+            return res
+        res = try_aes_decrypt(chunk[:8000])
+        if res:
+            return res
+        # test base64 + AES
         try:
-            dec = base64.b64decode(lp)
-            txt = dec.decode('utf-8', errors='ignore')
-            j = find_json(txt)
+            b64_part = chunk[:10000].decode('utf-8', errors='ignore').strip()
+            dec = base64.b64decode(b64_part, validate=False)
+            j = find_json(dec.decode('utf-8', errors='ignore'))
             if j:
                 return j
-            aes_res = try_aes_decrypt(dec)
-            if aes_res:
-                return aes_res
+            res = try_aes_decrypt(dec)
+            if res:
+                return res
         except:
             pass
 
-    try:
-        b64txt = file_bytes.decode('utf-8').strip()
-        dec = base64.b64decode(b64txt)
-        txt = dec.decode('utf-8', errors='ignore')
-        j = find_json(txt)
-        if j:
-            return j
-        aes_res = try_aes_decrypt(dec)
-        if aes_res:
-            return aes_res
-    except:
-        pass
-
-    aes_res = try_aes_decrypt(file_bytes[:len(file_bytes)//16*16])
-    if aes_res:
-        return aes_res
-
-    try:
-        txt = file_bytes.decode('utf-8', errors='ignore')
-        if ":" in txt:
-            parts = txt.split(":")
-            for p in parts:
-                try:
-                    dec = base64.b64decode(p.strip())
-                    t = dec.decode('utf-8', errors='ignore')
-                    j = find_json(t)
-                    if j:
-                        return j
-                    aes_res = try_aes_decrypt(dec)
-                    if aes_res:
-                        return aes_res
-                except:
-                    continue
-    except:
-        pass
-
     return None
 
-def decrypt_ehi(data: bytes):
-    return run(data)
-
-def decode(data: bytes):
-    return run(data)
-
-def decrypt(data: bytes):
-    return run(data)
+def decrypt_ehi(d): return run(d)
+def decode(d): return run(d)
+def decrypt(d): return run(d)
