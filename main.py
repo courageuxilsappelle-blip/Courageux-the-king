@@ -264,7 +264,7 @@ def predict_exact_score(match):
         return f"{match} => 2-1 (62%) Buteurs: Haaland"
     try:
         prompt = "Score exact EA FC 26 en francais pour: " + match
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
+        comp = groq_client.chat.completions.create(model="llama-3.3-70b-versatile",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
     except:
         return f"{match} => 2-1 (62%)"
