@@ -7,3 +7,4 @@ pillow
 yt-dlp
 msgpack
 pycryptodome
+fpdf2
