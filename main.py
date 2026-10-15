@@ -6,6 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from PIL import Image, ImageDraw, ImageFont
 import urllib3
 import msgpack
+from fpdf import FPDF
 urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
@@ -27,6 +28,7 @@ def home():
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
+
 # === V26 PATCH MATRIXZAT - DEBUT ===
 MATRIX_MODULES = {}
 for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
@@ -62,6 +64,7 @@ async def owner_cmd(update,context):
     except Exception as e:
         await update.message.reply_text(f"err {e}")
 # === V26 PATCH FIN ===
+
 USERS_FILE = "users.txt"
 def save_user(uid):
     try:
@@ -90,33 +93,58 @@ def to_3d(t):
     except:
         return t
 
+# === NOUVEAU PDF ESTHETIQUE - CORRIGE ===
 def create_pdf_book(title, content):
     try:
-        pages = []
-        W, H = 800, 1100
-        wrapper = textwrap.TextWrapper(width=70)
-        img = Image.new("RGB", (W, H), (255,255,255))
-        draw = ImageDraw.Draw(img)
-        try:
-            f_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-            f_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-        except:
-            f_title = f_text = ImageFont.load_default()
-        draw.text((50, 400), title[:30], fill=(0,0,0), font=f_title)
-        draw.text((50, 500), f"Par {SIGNATURE}", fill=(100,100,100), font=f_text)
-        pages.append(img)
-        words = wrapper.wrap(content)
-        for i in range(0, len(words), 35):
-            img = Image.new("RGB", (W, H), (255,255,255))
-            draw = ImageDraw.Draw(img)
-            y = 50
-            for line in words[i:i+35]:
-                draw.text((50, y), line, fill=(0,0,0), font=f_text)
-                y += 28
-            pages.append(img)
+        # Nettoyage du markdown de Groq
+        content = re.sub(r'\*\*', '', content)
+        content = content.replace('---', '')
+        content = re.sub(r'^#+\s*', '', content, flags=re.MULTILINE)
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+
+        # Page de garde
+        pdf.set_font("Helvetica", "B", 26)
+        pdf.ln(50)
+        pdf.multi_cell(0, 14, title[:80], align='C')
+        pdf.ln(10)
+        pdf.set_font("Helvetica", "", 13)
+        pdf.set_text_color(100,100,100)
+        pdf.cell(0, 10, f"Par {SIGNATURE}", align='C')
+        pdf.ln(15)
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')}", align='C')
+        pdf.ln(30)
+
+        # Contenu avec vrais paragraphes
+        paragraphs = content.split('\n')
+        pdf.set_text_color(0,0,0)
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                pdf.ln(6)
+                continue
+
+            # Titre de chapitre
+            if len(para) < 100 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction') or para.lower().startswith('conclusion') or para.lower().startswith('partie')):
+                pdf.set_font("Helvetica", "B", 14)
+                pdf.set_text_color(0, 51, 102)
+                pdf.ln(6)
+                pdf.multi_cell(0, 8, para)
+                pdf.ln(3)
+            else:
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(30,30,30)
+                pdf.multi_cell(0, 6.5, para)
+                pdf.ln(2)
+
         pdf_path = f"/tmp/{title[:15].replace(' ','_')}.pdf"
-        pages[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pages[1:])
+        pdf.output(pdf_path)
         return pdf_path
+
     except Exception as e:
         print(f"PDF Error {e}")
         return None
@@ -156,7 +184,6 @@ def get_host_info(host):
         info["error"] = str(e)
     return info
 
-# === NOUVEAU: FONCTION BLACKLIST COMME whatismyipaddress.com ===
 def check_blacklist_dns(ip):
     blacklists = [
         "zen.spamhaus.org",
@@ -390,14 +417,12 @@ async def scan200_cmd(update,context):
     txt += f"\n\n{SIGNATURE}"
     await update.message.reply_text(txt)
 
-# === NOUVELLE COMMANDE /bl ===
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
         await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
         return
     ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    # Si on donne un host, on résout en IP
     try:
         if not re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
             ip = socket.gethostbyname(ip)
@@ -407,20 +432,10 @@ async def bl_cmd(update,context):
     await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
     loop = asyncio.get_event_loop()
     listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
-
     if not listed:
-        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\n"
-        txt += f"Status: PROPRE ✅\n"
-        txt += f"Listes checkées: {total}\n"
-        txt += f"Propres: {clean}/{total}\n\n"
-        txt += f"all.s5h.net: Not Listed\n"
-        txt += f"b.barracudacentral.org: Not Listed\n"
-        txt += f"bl.spamcop.net: Not Listed\n"
-        txt += f"proxy.bl.gweep.ca: Not Listed (pas proxy spam)\n"
-        txt += f"\n{SIGNATURE}"
+        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\nStatus: PROPRE ✅\nListes checkées: {total}\nPropres: {clean}/{total}\n\n{SIGNATURE}"
     else:
-        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\n"
-        txt += f"Blacklistée sur {len(listed)}/{total}:\n"
+        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\nBlacklistée sur {len(listed)}/{total}:\n"
         for bl in listed:
             txt += f"❌ {bl}\n"
         txt += f"\n{SIGNATURE}"
@@ -485,11 +500,7 @@ def _aes_cfb_decrypt(data, key):
         try:
             bits = len(key) * 8
             p = subprocess.run(
-                [
-                    "openssl", "enc", f"-aes-{bits}-cfb", "-d",
-                    "-K", key.hex(), "-iv", DT_IV.hex(),
-                    "-in", in_name, "-out", out_name
-                ],
+                ["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],
                 capture_output=True, text=True, timeout=15
             )
             if p.returncode!= 0:
@@ -506,8 +517,7 @@ def _try_json_string(value):
     if not isinstance(value, str):
         return value
     stripped = value.strip()
-    if not ((stripped.startswith("{") and stripped.endswith("}")) or
-            (stripped.startswith("[") and stripped.endswith("]"))):
+    if not ((stripped.startswith("{") and stripped.endswith("}")) or (stripped.startswith("[") and stripped.endswith("]"))):
         return value
     try:
         fixed = re.sub(r'(:\s*)(\$[A-Za-z0-9_]+)', r'\1"\2"', stripped)
@@ -566,16 +576,10 @@ def decrypt_dark_tunnel_file(path):
     encrypted = _b64decode_loose(outer["encryptedLockedConfig"])
     decrypted_outer = _aes_cfb_decrypt(encrypted, DT_KEY_256)
     unpacked_outer = _parse_msgpack(decrypted_outer)
-    if isinstance(unpacked_outer, dict) and isinstance(
-        unpacked_outer.get("EncryptedLockedConfig"), (bytes, bytearray)
-    ):
-        inner = _aes_cfb_decrypt(
-            unpacked_outer["EncryptedLockedConfig"], DT_KEY_192
-        )
+    if isinstance(unpacked_outer, dict) and isinstance(unpacked_outer.get("EncryptedLockedConfig"), (bytes, bytearray)):
+        inner = _aes_cfb_decrypt(unpacked_outer["EncryptedLockedConfig"], DT_KEY_192)
         unpacked_inner = _parse_msgpack(inner)
-        unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(
-            unpacked_inner, DT_KEY_192
-        )
+        unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(unpacked_inner, DT_KEY_192)
     outer["encryptedLockedConfig"] = unpacked_outer
     return _normalize_dark_json(outer)
 
@@ -662,11 +666,7 @@ def _extract_v2ray_configs(cfg):
     unique = []
     seen2 = set()
     for x in result:
-        key = (
-            str(x.get("address")),
-            str(x.get("port")),
-            str(x.get("id") or x.get("uuid") or x.get("password")),
-        )
+        key = (str(x.get("address")), str(x.get("port")), str(x.get("id") or x.get("uuid") or x.get("password")))
         if key not in seen2:
             seen2.add(key)
             unique.append(x)
@@ -693,7 +693,6 @@ def _extract_transport_details(cfg):
     }
     return {k: v for k, v in out.items() if v not in (None, "")}
 
-# === MAPPING EXTENSION -> MODULE ===
 EXT_TO_MODULES = {
     ".plus": ["DARKTUNNEL"],
     ".dark": ["DARKTUNNEL"],
@@ -727,13 +726,10 @@ async def handle_dark_tunnel(update, context):
     lower_name = _normalize_filename(original_name).lower()
     ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
     path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.path.basename(lower_name)}")
-
     try:
         await update.message.reply_text(f"🔐 Analyse {ext} : {original_name}...")
         tg_file = await doc.get_file()
         await tg_file.download_to_drive(path)
-
-        # 1. PLUS = decodeur natif, on ne touche à rien d'autre
         if ext in [".plus", ".dark"]:
             loop = asyncio.get_running_loop()
             cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
@@ -749,12 +745,9 @@ async def handle_dark_tunnel(update, context):
             lines.append(SIGNATURE)
             await update.message.reply_text("\n".join(lines)[:4000])
             return
-
-        # 2. Autres extensions = on teste SEULEMENT le bon module
         candidates = EXT_TO_MODULES.get(ext, [])
         if not candidates:
-            candidates = list(MATRIX_MODULES.keys()) # fallback si extension inconnue
-
+            candidates = list(MATRIX_MODULES.keys())
         valid_out = []
         raw = Path(path).read_bytes()
         for mod_name in candidates:
@@ -767,29 +760,22 @@ async def handle_dark_tunnel(update, context):
                 except: res = func(raw)
                 if _is_valid_result(res):
                     valid_out.append(f"[{mod_name}] {ext} OK =>\n{str(res)[:3500]}")
-                    break # on s'arrête dès qu'on a trouvé le bon
+                    break
             except Exception as e:
                 print(f"{mod_name} fail: {e}")
                 continue
-
         if valid_out:
             await update.message.reply_text("\n---\n".join(valid_out)[:4000])
             return
-
-        # 3. Si rien n'a marché
         missing = ", ".join(candidates)
-        await update.message.reply_text(
-            f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\n"
-            f"Modules testés: {missing}\n"
-            f"Vérifie que le fichier {candidates[0]}.py est bien uploadé à la racine de ton GitHub sur Render.\n{SIGNATURE}"
-        )
-
+        await update.message.reply_text(f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\nModules testés: {missing}\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
     finally:
         try:
             if os.path.exists(path): os.remove(path)
         except: pass
+
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw = update.message.text or ""
