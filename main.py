@@ -12,7 +12,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")  # <-- NOUVEAU
-print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER ===")
+print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -304,9 +304,78 @@ def create_score_image(t):
     img.save(p)
     return p
 
+# ===== V32 NOUVEAU - IMAGE GEN + EDIT PHOTO (AJOUT SEULEMENT) =====
+def enhance_prompt_for_image(p):
+    try:
+        if groq_client:
+            low = p.lower()
+            if "dadju" in low:
+                return "portrait of a handsome Congolese French male R&B singer, light brown skin, short curly afro, beard, stylish black shirt and gold chain, concert stage, photorealistic 8k"
+            if "gims" in low or "maitre gims" in low:
+                return "portrait of a tall Black French rapper with dark sunglasses, black cap, beard, black jacket, stage performance, photorealistic 8k"
+            comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content": f"Rewrite this into a detailed ENGLISH prompt for FLUX image model, photorealistic 8k: '{p}'. Return ONLY English prompt."}], max_tokens=120, temperature=0.7)
+            enh = comp.choices[0].message.content.strip()
+            if len(enh) > 10:
+                return enh
+    except:
+        pass
+    return f"{p}, photorealistic, ultra detailed, 8k, cinematic lighting"
+
+def gen_image_pollination(prompt):
+    import urllib.parse
+    enhanced = enhance_prompt_for_image(prompt)
+    safe = urllib.parse.quote(enhanced[:600])
+    urls = [
+        f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=flux&seed={random.randint(0,9999999)}",
+        f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=turbo&seed={random.randint(0,9999999)}"
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=90)
+            if r.status_code == 200 and len(r.content) > 15000:
+                path = f"/tmp/gen_{random.randint(1000,99999)}.jpg"
+                with open(path,'wb') as f:
+                    f.write(r.content)
+                return path
+        except:
+            continue
+    return None
+
+def upload_to_catbox(path):
+    try:
+        with open(path,'rb') as f:
+            r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload": f}, timeout=40)
+            if r.status_code == 200 and "https://" in r.text:
+                return r.text.strip()
+    except Exception as e:
+        print(f"catbox fail {e}")
+    return None
+
+def gen_edit_image(prompt, image_url):
+    import urllib.parse
+    safe_prompt = urllib.parse.quote(prompt[:600])
+    safe_image = urllib.parse.quote(image_url)
+    urls = [
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=1024&height=1024&nologo=true&seed={random.randint(0,9999999)}",
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=flux&width=1024&height=1024&nologo=true&seed={random.randint(0,9999999)}"
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=120)
+            if r.status_code == 200 and len(r.content) > 20000:
+                path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
+                with open(path,'wb') as f:
+                    f.write(r.content)
+                return path
+        except Exception as e:
+            print(f"edit fail {e}")
+            continue
+    return None
+# ===== FIN AJOUT V32 =====
+
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo = analyse\n✏️ Photo + /edit prompt = modifie\n🎨 /img prompt = genere photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip"))
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
@@ -793,25 +862,54 @@ async def handle_download(update,context,audio_only=False):
     else:
         await update.message.reply_text(to_3d(f"{t}"))
 
-# ===== NOUVELLE FONCTION PHOTO AVEC OPENROUTER (SEUL AJOUT) =====
+# ===== FONCTION PHOTO MODIFIEE - GARDE L'ORIGINAL + AJOUT EDIT =====
 async def handle_photo(update,context):
     save_user(update.effective_user.id)
-    cap = update.message.caption or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
+    cap = (update.message.caption or "").strip()
+    low_cap = cap.lower()
+
+    # === MODE EDIT : si legende contient /edit, /img, modifie, etc ===
+    is_edit_mode = any(x in low_cap for x in ["/edit", "/img", "modifie", "change", "transforme", " en ", "style", "cyborg", "roi", "anime", "gta", "vieux", "jeune"])
+
+    pf = await update.message.photo[-1].get_file()
+    fp = f"/tmp/analyse_{update.effective_user.id}.jpg"
+    await pf.download_to_drive(fp)
+
+    if is_edit_mode:
+        prompt = cap.replace("/edit","").replace("/img","").replace("/image","").strip()
+        if not prompt or len(prompt) < 3:
+            prompt = "make it cinematic, photorealistic, 8k"
+        await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s")
+        loop = asyncio.get_event_loop()
+        image_url = await loop.run_in_executor(None, upload_to_catbox, fp)
+        if not image_url:
+            await update.message.reply_text(f"❌ Erreur upload image {SIGNATURE}")
+            return
+        edited_path = await loop.run_in_executor(None, gen_edit_image, prompt, image_url)
+        if edited_path and os.path.exists(edited_path):
+            with open(edited_path,'rb') as f:
+                await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"✏️ {prompt}\n{SIGNATURE}")
+            try:
+                os.remove(edited_path)
+                os.remove(fp)
+            except:
+                pass
+        else:
+            await update.message.reply_text(f"❌ Erreur édition, réessaie {SIGNATURE}")
+        return
+
+    # === MODE ORIGINAL VISION (TON CODE INTACT) ===
+    cap_vision = cap or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
-        pf = await update.message.photo[-1].get_file()
-        fp = "/tmp/analyse.jpg"
-        await pf.download_to_drive(fp)
         with open(fp,"rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
-
-        # 1. PRIORITE OPENROUTER (VISION FREE 2026)
         if openrouter_client:
             try:
                 comp = openrouter_client.chat.completions.create(
                     model="qwen/qwen-2.5-vl-72b-instruct",
                     messages=[{"role":"user","content":[
-                        {"type":"text","text": cap},
+                        {"type":"text","text": cap_vision},
                         {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
                     ]}],
                     max_tokens=600
@@ -825,7 +923,7 @@ async def handle_photo(update,context):
                     comp = openrouter_client.chat.completions.create(
                         model="google/gemini-2.0-flash-001",
                         messages=[{"role":"user","content":[
-                            {"type":"text","text": cap},
+                            {"type":"text","text": cap_vision},
                             {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
                         ]}],
                         max_tokens=600
@@ -836,15 +934,32 @@ async def handle_photo(update,context):
                 except Exception as e2:
                     await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
                     return
-
-        # 2. Si pas de clé OpenRouter
         await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision. Groq a supprime tous ses modeles vision en 2026.\n{SIGNATURE}")
-
     except Exception as e:
         await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
 
 async def mp3_cmd(update,context):
     await handle_download(update,context,True)
+
+async def img_cmd(update,context):
+    save_user(update.effective_user.id)
+    if not context.args:
+        await update.message.reply_text("🎨 /img + idée Ex: /img Dadju en concert\n✏️ Pour modifier une photo: envoie la photo avec /edit en roi")
+        return
+    prompt = " ".join(context.args)
+    await update.message.reply_text(f"🎨 Génération: {prompt}... 20s")
+    loop = asyncio.get_event_loop()
+    img_path = await loop.run_in_executor(None, gen_image_pollination, prompt)
+    if img_path and os.path.exists(img_path):
+        with open(img_path,'rb') as f:
+            await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"🖼️ {prompt}\n{SIGNATURE}")
+        try: os.remove(img_path)
+        except: pass
+    else:
+        await update.message.reply_text(f"❌ Erreur génération {SIGNATURE}")
+
+async def edit_cmd(update,context):
+    await update.message.reply_text("✏️ Envoie une photo avec la légende /edit + ton idée\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne dorée")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
@@ -872,7 +987,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL + OPENROUTER...")
+    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -891,6 +1006,10 @@ def main():
     app.add_handler(CommandHandler("tous", today_cmd))
     app.add_handler(CommandHandler("owner", owner_cmd))
     app.add_handler(CommandHandler("audit", owner_cmd))
+    app.add_handler(CommandHandler("img", img_cmd))
+    app.add_handler(CommandHandler("image", img_cmd))
+    app.add_handler(CommandHandler("gen", img_cmd))
+    app.add_handler(CommandHandler("edit", edit_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
