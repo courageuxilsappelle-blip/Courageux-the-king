@@ -11,7 +11,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print("=== V25.4 DARK TUNNEL DECODER ===")
+print("=== V26 FIX VISION ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -24,17 +24,15 @@ SIGNATURE = "COURAGEUX THE KING"
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return f"Bot {SIGNATURE} V25.5 DARK TUNNEL LIVE"
+    return f"Bot {SIGNATURE} V26 VISION LIVE"
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
 
-# === V26 PATCH MATRIXZAT - DEBUT ===
 MATRIX_MODULES = {}
 for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
     try:
         MATRIX_MODULES[mod_name] = __import__(mod_name)
-        print(f"Loaded {mod_name}")
     except Exception as e:
         pass
 
@@ -63,7 +61,6 @@ async def owner_cmd(update,context):
         await update.message.reply_text(txt)
     except Exception as e:
         await update.message.reply_text(f"err {e}")
-# === V26 PATCH FIN ===
 
 USERS_FILE = "users.txt"
 def save_user(uid):
@@ -93,7 +90,6 @@ def to_3d(t):
     except:
         return t
 
-# === NOUVEAU PDF ESTHETIQUE - CORRIGE ===
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
@@ -320,7 +316,7 @@ async def pdf_cmd(update,context):
         prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##."
         contenu = None
         last_err = ""
-        for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3-32b"]:
+        for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]:
             try:
                 comp = groq_client.chat.completions.create(model=model_id, messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
                 contenu = comp.choices[0].message.content
@@ -793,13 +789,17 @@ async def handle_photo(update,context):
         with open(fp,"rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if groq_client:
-            comp = groq_client.chat.completions.create(model="qwen/qwen3-32b",messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],temperature=0.0,max_tokens=300)
+            comp = groq_client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
+                temperature=0.0,
+                max_tokens=500)
             rep = comp.choices[0].message.content
             await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
         else:
             await update.message.reply_text("GROQ manquant")
     except Exception as e:
-        await update.message.reply_text(f"{str(e)[:500]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"{str(e)[:800]}\n\n{SIGNATURE}")
 
 async def mp3_cmd(update,context):
     await handle_download(update,context,True)
@@ -830,7 +830,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL...")
+    print("Building V26 VISION FIX...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -852,7 +852,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.5 GO...")
+    print("V26 GO...")
     app.run_polling()
 
 if __name__ == "__main__":
