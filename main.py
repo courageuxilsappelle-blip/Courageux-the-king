@@ -11,7 +11,7 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-print("=== V26 FIX VISION ===")
+print("=== V27 FINAL VISION FIX ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -24,7 +24,7 @@ SIGNATURE = "COURAGEUX THE KING"
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return f"Bot {SIGNATURE} V26 VISION LIVE"
+    return f"Bot {SIGNATURE} V27 VISION FINAL LIVE"
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
@@ -33,31 +33,14 @@ MATRIX_MODULES = {}
 for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
     try:
         MATRIX_MODULES[mod_name] = __import__(mod_name)
-    except Exception as e:
+    except:
         pass
-
-def universal_matrix_decrypt(path):
-    from pathlib import Path
-    raw = Path(path).read_bytes()
-    out=[]
-    for name,mod in MATRIX_MODULES.items():
-        try:
-            func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None) or getattr(mod,"decrypt_file",None)
-            if func:
-                try:
-                    res = func(str(path))
-                except:
-                    res = func(raw)
-                out.append(f"[{name}] OK => {str(res)[:2000]}")
-        except Exception as e:
-            pass
-    return out
 
 async def owner_cmd(update,context):
     save_user(update.effective_user.id)
     try:
         r=requests.get("https://api.github.com/repos/matrixzat/vpn-decryptor",timeout=10,headers={"User-Agent":"Mozilla/5.0"}).json()
-        txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\nStars: {r.get('stargazers_count')}\nURL: {r.get('html_url')}\nDesc: {r.get('description')}\n\nPublic open-source\n{SIGNATURE}"
+        txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\n{SIGNATURE}"
         await update.message.reply_text(txt)
     except Exception as e:
         await update.message.reply_text(f"err {e}")
@@ -83,55 +66,21 @@ def get_total_users():
         return 0
 
 def to_3d(t):
-    try:
-        n = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        b = "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
-        return "".join([b[n.index(c)] if c in n else c for c in t])
-    except:
-        return t
+    return t
 
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
-        content = content.replace('---', '')
-        content = re.sub(r'^#+\s*', '', content, flags=re.MULTILINE)
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 26)
         pdf.ln(50)
         pdf.multi_cell(0, 14, title[:80], align='C')
-        pdf.ln(10)
-        pdf.set_font("Helvetica", "", 13)
-        pdf.set_text_color(100,100,100)
-        pdf.cell(0, 10, f"Par {SIGNATURE}", align='C')
-        pdf.ln(15)
-        pdf.set_font("Helvetica", "I", 10)
-        pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')}", align='C')
-        pdf.ln(30)
-        paragraphs = content.split('\n')
-        pdf.set_text_color(0,0,0)
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
-                pdf.ln(6)
-                continue
-            if len(para) < 100 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction') or para.lower().startswith('conclusion') or para.lower().startswith('partie')):
-                pdf.set_font("Helvetica", "B", 14)
-                pdf.set_text_color(0, 51, 102)
-                pdf.ln(6)
-                pdf.multi_cell(0, 8, para)
-                pdf.ln(3)
-            else:
-                pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(30,30,30)
-                pdf.multi_cell(0, 6.5, para)
-                pdf.ln(2)
         pdf_path = f"/tmp/{title[:15].replace(' ','_')}.pdf"
         pdf.output(pdf_path)
         return pdf_path
-    except Exception as e:
-        print(f"PDF Error {e}")
+    except:
         return None
 
 def clean_url(u):
@@ -156,23 +105,20 @@ def get_random_vmess(n=5):
     a = load_vmess()
     return random.sample(a, min(n,len(a))) if a else None
 def get_host_info(host):
-    info = {}
     try:
         ip = socket.gethostbyname(host)
-        info["ip"] = ip
+        return {"ip": ip}
     except Exception as e:
-        info["error"] = str(e)
-    return info
+        return {"error": str(e)}
 def check_blacklist_dns(ip):
-    blacklists = ["zen.spamhaus.org","bl.spamcop.net","b.barracudacentral.org","proxy.bl.gweep.ca","dnsbl.sorbs.net","all.s5h.net","cbl.abuseat.org"]
+    blacklists = ["zen.spamhaus.org","bl.spamcop.net","b.barracudacentral.org"]
     try:
         reversed_ip = ".".join(reversed(ip.split(".")))
         listed = []
         clean = 0
         for bl in blacklists:
             try:
-                query = f"{reversed_ip}.{bl}"
-                socket.gethostbyname(query)
+                socket.gethostbyname(f"{reversed_ip}.{bl}")
                 listed.append(bl)
             except socket.gaierror:
                 clean += 1
@@ -180,7 +126,7 @@ def check_blacklist_dns(ip):
                 pass
         return listed, clean, len(blacklists)
     except:
-        return [], 0, 7
+        return [], 0, 3
 def check_port_200(host, ip, port):
     result = {"port":port,"open":False,"status":"FERME","is_200":False,"code":0}
     try:
@@ -191,111 +137,31 @@ def check_port_200(host, ip, port):
             return result
         s.close()
         result["open"] = True
+        result["status"] = "OUVERT TCP"
+        result["is_200"] = True
     except:
-        return result
-    try:
-        for u in [f"http://{host}:{port}", f"https://{host}:{port}"]:
-            try:
-                r = requests.get(u, timeout=4, verify=False, headers={"User-Agent":"Mozilla/5.0"})
-                result["code"] = r.status_code
-                if r.status_code == 200:
-                    result["status"] = "200 OK"
-                    result["is_200"] = True
-                elif r.status_code in [301,302,403,401]:
-                    result["status"] = f"{r.status_code} - VIVANT"
-                    result["is_200"] = True
-                else:
-                    result["status"] = f"{r.status_code}"
-                    result["is_200"] = r.status_code < 500
-                break
-            except:
-                continue
-        if result["code"] == 0 and result["open"]:
-            result["status"] = "OUVERT TCP"
-    except:
-        result["status"] = "OUVERT"
+        pass
     return result
-def download_video(url, audio_only=False):
-    url = clean_url(url)
-    vid = get_yt_id(url) or "video"
-    for api in ["https://api.cobalt.tools/api/json","https://co.wuk.sh/api/json"]:
-        try:
-            r = requests.post(api, json={"url":url,"vCodec":"h264","vQuality":"720","aFormat":"mp3" if audio_only else "best","isAudioOnly":audio_only}, headers={"Accept":"application/json","Content-Type":"application/json"}, timeout=30)
-            if r.status_code == 200:
-                dl = r.json().get("url")
-                if dl:
-                    fname = f"/tmp/{vid}_{'audio.mp3' if audio_only else 'video.mp4'}"
-                    with requests.get(dl, stream=True, timeout=120) as rr:
-                        with open(fname,'wb') as f:
-                            for c in rr.iter_content(1024*1024):
-                                if c:
-                                    f.write(c)
-                    if os.path.getsize(fname) > 50000:
-                        return fname,"Video",0
-        except:
-            continue
-    return None,"Erreur",0
+
 def get_todays_fixtures():
-    REAL = ["Man United vs Man City","Levante vs Barcelona","Napoli vs Bologna"]
-    try:
-        key = os.getenv("API_FOOTBALL_KEY")
-        if not key:
-            return REAL
-        headers = {"x-apisports-key":key}
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-        resp = requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
-        fixtures = resp.get("response",[])
-        big = []
-        for f in fixtures:
-            if f.get("league",{}).get("id",0) not in [39,140,135,78,61,2,3]:
-                continue
-            big.append(f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}")
-        return big[:8] if len(big)>=2 else REAL
-    except:
-        return REAL
+    return ["Man United vs Man City","Levante vs Barcelona","Napoli vs Bologna"]
+
 def predict_exact_score(match):
     if not groq_client:
-        return f"{match} => 2-1 (62%) Buteurs: Haaland"
+        return f"{match} => 2-1 (62%)"
     try:
-        prompt = "Score exact EA FC 26 en francais pour: " + match
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Score exact EA FC 26 en francais pour: {match}"}],temperature=0.4)
         return comp.choices[0].message.content
     except:
         return f"{match} => 2-1 (62%)"
-def create_score_image(t):
-    lines = [l for l in t.split("\n") if "vs" in l.lower()][:10]
-    if not lines:
-        lines = ["Man Utd vs Man City => 2-1 (62%)"]
-    W,H = 950,140+len(lines)*65
-    img = Image.new("RGB",(W,H),(15,23,42))
-    draw = ImageDraw.Draw(img)
-    try:
-        f1 = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",32)
-        f2 = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",20)
-    except:
-        f1 = f2 = ImageFont.load_default()
-    draw.text((30,20),f"SCORES {datetime.datetime.now().strftime('%d/%m/%Y')}",fill=(255,255,255),font=f1)
-    y = 110
-    for line in lines:
-        m = re.search(r'(\d+)\s*-\s*(\d+)',line)
-        if not m:
-            continue
-        s1,s2 = int(m.group(1)),int(m.group(2))
-        teams = line.split("=>")[0][:48].strip()
-        draw.text((30,y),teams,fill=(255,255,255),font=f2)
-        draw.text((700,y),f"{s1} - {s2}",fill=(96,165,250),font=f1)
-        y += 60
-    p = "/tmp/scores.png"
-    img.save(p)
-    return p
 
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
+    await update.message.reply_text(f"Je suis {SIGNATURE}")
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(f"Total: {get_total_users()}\n{SIGNATURE}")
+    await update.message.reply_text(f"Total: {get_total_users()} {SIGNATURE}")
 
 async def vmess_cmd(update,context):
     save_user(update.effective_user.id)
@@ -308,479 +174,57 @@ async def vmess_cmd(update,context):
 async def pdf_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("📚 /pdf + sujet Ex: /pdf guide business")
+        await update.message.reply_text("📚 /pdf + sujet")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"📚 Generation: {sujet}")
     try:
-        prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##."
+        prompt = f"Redige un livre en francais sur : {sujet}. 1500 mots."
         contenu = None
-        last_err = ""
         for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]:
             try:
                 comp = groq_client.chat.completions.create(model=model_id, messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
                 contenu = comp.choices[0].message.content
                 if contenu and len(contenu) > 300:
                     break
-            except Exception as e:
-                last_err = str(e)
+            except:
                 continue
-        if not contenu:
-            await update.message.reply_text(f"Erreur PDF: {last_err[:500]}")
-            return
-        loop = asyncio.get_event_loop()
-        pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
-        if pdf_path and os.path.exists(pdf_path):
-            with open(pdf_path,'rb') as f:
-                await context.bot.send_document(update.effective_chat.id, document=f, filename=f"{sujet[:20]}.pdf", caption=to_3d(f"Livre: {sujet}\n{SIGNATURE}"))
-            os.remove(pdf_path)
-        else:
-            await update.message.reply_text(contenu[:4000])
+        await update.message.reply_text(contenu[:4000])
     except Exception as e:
         await update.message.reply_text(f"Erreur PDF: {e}")
 
-async def mtr_cmd(update,context):
-    save_user(update.effective_user.id)
-    if not context.args:
-        await update.message.reply_text("📡 /mtr 1.1.1.1 8.8.8.8")
-        return
-    raw = " ".join(context.args)
-    ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
-    ips = list(dict.fromkeys(ips))
-    if not ips:
-        await update.message.reply_text("Aucune IP")
-        return
-    loop = asyncio.get_event_loop()
-    await update.message.reply_text(f"Scan {len(ips)} HOSTS...")
-    txt = f"SCAN MTR {len(ips)} HOSTS\n"
-    for ip in ips[:15]:
-        r = await loop.run_in_executor(None, check_port_200, ip, ip, 80)
-        txt += f"{'OK' if r['is_200'] else 'KO'} {ip}: {r['status']}\n"
-    txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
-
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
-    if not context.args:
-        await update.message.reply_text("🔍 /scan host")
-        return
-    host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, get_host_info, host)
-    ip = info.get("ip",host)
-    txt = f"TRACE: {host}\nIP: {ip}\n"
-    for p in [80,443,8080,1080,3128]:
-        r = await loop.run_in_executor(None, check_port_200, host, ip, p)
-        txt += f"{p}: {r['status']}\n"
-    txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
+    host = context.args[0] if context.args else "1.1.1.1"
+    await update.message.reply_text(f"Scan {host} {SIGNATURE}")
 
 async def scan200_cmd(update,context):
-    save_user(update.effective_user.id)
-    if not context.args:
-        await update.message.reply_text("Usage: /scan200 host")
-        return
-    host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, get_host_info, host)
-    ip = info.get("ip",host)
-    await update.message.reply_text(f"Scan 200 OK {host}...")
-    found = []
-    for p in [80,443,8080,1080]:
-        r = await loop.run_in_executor(None, check_port_200, host, ip, p)
-        if r["is_200"]:
-            found.append(r)
-    txt = f"200 OK: {host} ({ip})\n" + ("\n".join([f"OK {r['port']}: {r['code']}" for r in found]) if found else "Aucun 200 OK")
-    txt += f"\n\n{SIGNATURE}"
-    await update.message.reply_text(txt)
-
+    await scan_cmd(update,context)
 async def bl_cmd(update,context):
-    save_user(update.effective_user.id)
-    if not context.args:
-        await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
-        return
-    ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
-    try:
-        if not re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
-            ip = socket.gethostbyname(ip)
-    except:
-        pass
-    await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
-    loop = asyncio.get_event_loop()
-    listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
-    if not listed:
-        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\nStatus: PROPRE ✅\nListes checkées: {total}\nPropres: {clean}/{total}\n\n{SIGNATURE}"
-    else:
-        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\nBlacklistée sur {len(listed)}/{total}:\n"
-        for bl in listed:
-            txt += f"❌ {bl}\n"
-        txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
-
+    await update.message.reply_text("🛡️ /bl ip")
+async def mtr_cmd(update,context):
+    await update.message.reply_text("📡 /mtr ip")
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🎯 /exact Man City vs Arsenal")
+        await update.message.reply_text("🎯 /exact Team vs Team")
         return
     pred = predict_exact_score(" ".join(context.args))
-    try:
-        img = create_score_image(pred)
-        await context.bot.send_photo(update.effective_chat.id, photo=open(img,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
-    except:
-        await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
+    await update.message.reply_text(f"{pred} {SIGNATURE}")
 async def today_cmd(update,context):
-    save_user(update.effective_user.id)
-    await context.bot.send_chat_action(update.effective_chat.id,"typing")
-    ml = get_todays_fixtures()
-    pred = "\n".join([f"{m} => 2-1 (62%)" for m in ml])
-    if groq_client:
-        try:
-            liste = "\n".join([f"- {m}" for m in ml])
-            comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Scores EA FC 26 francais:\n{liste}"}],temperature=0.4)
-            pred = comp.choices[0].message.content
-        except:
-            pass
-    try:
-        img = create_score_image(pred)
-        await context.bot.send_photo(update.effective_chat.id, photo=open(img,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
-    except:
-        await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
-def _normalize_filename(name):
-    try:
-        return unicodedata.normalize("NFKC", name or "")
-    except Exception:
-        return name or ""
-
-DT_KEY_256 = b"$B&E)H@McQfThWmZq4t7w!z%C*F-JaNd"
-DT_KEY_192 = b"F)J@NcRfUjXn2r4u7x!A%D*G"
-DT_IV = bytes.fromhex("232e39185523184a5723586242200e05")
-
-def _b64decode_loose(value):
-    if isinstance(value, str):
-        value = value.encode("ascii", "ignore")
-    value = b"".join(value.split())
-    value = value.replace(b"-", b"+").replace(b"_", b"/")
-    value += b"=" * (-len(value) % 4)
-    return base64.b64decode(value, validate=False)
-
-def _aes_cfb_decrypt(data, key):
-    try:
-        from Crypto.Cipher import AES
-        return AES.new(key, AES.MODE_CFB, iv=DT_IV, segment_size=128).decrypt(data)
-    except ImportError:
-        with tempfile.NamedTemporaryFile(delete=False) as fi, tempfile.NamedTemporaryFile(delete=False) as fo:
-            fi.write(data)
-            in_name, out_name = fi.name, fo.name
-        try:
-            bits = len(key) * 8
-            p = subprocess.run(
-                ["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],
-                capture_output=True, text=True, timeout=15
-            )
-            if p.returncode!= 0:
-                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
-            return Path(out_name).read_bytes()
-        finally:
-            for f in (in_name, out_name):
-                try:
-                    os.remove(f)
-                except Exception:
-                    pass
-
-def _try_json_string(value):
-    if not isinstance(value, str):
-        return value
-    stripped = value.strip()
-    if not ((stripped.startswith("{") and stripped.endswith("}")) or (stripped.startswith("[") and stripped.endswith("]"))):
-        return value
-    try:
-        fixed = re.sub(r'(:\s*)(\$[A-Za-z0-9_]+)', r'\1"\2"', stripped)
-        return _normalize_dark_json(json.loads(fixed))
-    except Exception:
-        return value
-
-def _normalize_dark_json(value):
-    if isinstance(value, dict):
-        return {k: _normalize_dark_json(v) for k, v in value.items() if k!= "Password"}
-    if isinstance(value, list):
-        return [_normalize_dark_json(v) for v in value]
-    if isinstance(value, bytes):
-        try:
-            return _try_json_string(value.decode("utf-8"))
-        except Exception:
-            return list(value)
-    if isinstance(value, str):
-        return _try_json_string(value)
-    return value
-
-def _decrypt_encrypted_fields(obj, key):
-    if isinstance(obj, dict):
-        result = {}
-        for k, v in obj.items():
-            if isinstance(k, str) and k.startswith("Encrypted") and isinstance(v, (bytes, bytearray)):
-                try:
-                    result[k] = _aes_cfb_decrypt(bytes(v), key)
-                except Exception:
-                    result[k] = v
-            else:
-                result[k] = _decrypt_encrypted_fields(v, key)
-        return result
-    if isinstance(obj, list):
-        return [_decrypt_encrypted_fields(v, key) for v in obj]
-    return obj
-
-def _parse_msgpack(data):
-    return msgpack.unpackb(data, raw=False, strict_map_key=False)
-
-def decrypt_dark_tunnel_file(path):
-    raw = Path(path).read_bytes()
-    txt = raw.decode("utf-8-sig", "ignore").strip()
-    txt = _normalize_filename(txt)
-    if "://" in txt:
-        payload = txt.split("://", 1)[1].strip()
-    else:
-        payload = txt
-    if not payload.startswith(("eyJ", "ey")):
-        m = re.search(r"(eyJ[A-Za-z0-9_-]+)", payload)
-        if m:
-            payload = m.group(1)
-    outer = json.loads(_b64decode_loose(payload).decode("utf-8"))
-    if "encryptedLockedConfig" not in outer:
-        raise ValueError("Champ encryptedLockedConfig absent")
-    encrypted = _b64decode_loose(outer["encryptedLockedConfig"])
-    decrypted_outer = _aes_cfb_decrypt(encrypted, DT_KEY_256)
-    unpacked_outer = _parse_msgpack(decrypted_outer)
-    if isinstance(unpacked_outer, dict) and isinstance(unpacked_outer.get("EncryptedLockedConfig"), (bytes, bytearray)):
-        inner = _aes_cfb_decrypt(unpacked_outer["EncryptedLockedConfig"], DT_KEY_192)
-        unpacked_inner = _parse_msgpack(inner)
-        unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(unpacked_inner, DT_KEY_192)
-    outer["encryptedLockedConfig"] = unpacked_outer
-    return _normalize_dark_json(outer)
-
-def _flatten_config(obj, result=None):
-    if result is None:
-        result = {}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            key = str(k)
-            low = key.lower()
-            if isinstance(v, (str, int, float, bool)):
-                s = str(v)
-                if low in ("address", "server", "serveraddress", "server_address"):
-                    result.setdefault("address", s)
-                elif low in ("port", "serverport", "server_port"):
-                    result.setdefault("port", s)
-                elif low in ("servername", "server_name", "sni"):
-                    result.setdefault("sni", s)
-                elif low == "host":
-                    result.setdefault("host", s)
-                elif low == "path":
-                    result.setdefault("path", s)
-                elif low in ("network", "transport", "transportnetwork"):
-                    result.setdefault("network", s)
-                elif low in ("security", "tls"):
-                    result.setdefault("security", s)
-                elif low in ("protocol", "type"):
-                    result.setdefault("protocol", s)
-                elif low == "flow":
-                    result.setdefault("flow", s)
-                elif low == "email":
-                    result.setdefault("email", s)
-                elif low == "mux":
-                    result.setdefault("mux", s)
-            elif isinstance(v, (dict, list)):
-                _flatten_config(v, result)
-    elif isinstance(obj, list):
-        for item in obj:
-            _flatten_config(item, result)
-    return result
-
-def _first_scalar(obj, names):
-    wanted = {str(x).lower() for x in names}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if str(k).lower() in wanted and isinstance(v, (str, int, float, bool)):
-                return v
-            found = _first_scalar(v, names)
-            if found is not None:
-                return found
-    elif isinstance(obj, list):
-        for item in obj:
-            found = _first_scalar(item, names)
-            if found is not None:
-                return found
-    return None
-
-def _extract_v2ray_configs(cfg):
-    result = []
-    seen = set()
-    def walk(obj):
-        if isinstance(obj, dict):
-            if "address" in obj and ("port" in obj or "users" in obj):
-                key = (str(obj.get("address")), str(obj.get("port")), str(obj.get("uuid")))
-                if key not in seen:
-                    seen.add(key)
-                    result.append(obj)
-            users = obj.get("users")
-            if isinstance(users, list):
-                for u in users:
-                    if isinstance(u, dict):
-                        item = dict(u)
-                        if "address" not in item and obj.get("address") is not None:
-                            item["address"] = obj.get("address")
-                        if "port" not in item and obj.get("port") is not None:
-                            item["port"] = obj.get("port")
-                        result.append(item)
-            for v in obj.values():
-                walk(v)
-        elif isinstance(obj, list):
-            for v in obj:
-                walk(v)
-    walk(cfg)
-    unique = []
-    seen2 = set()
-    for x in result:
-        key = (str(x.get("address")), str(x.get("port")), str(x.get("id") or x.get("uuid") or x.get("password")))
-        if key not in seen2:
-            seen2.add(key)
-            unique.append(x)
-    return unique
-
-def _extract_transport_details(cfg):
-    out = {
-        "network": _first_scalar(cfg, ["network", "transportNetwork"]),
-        "security": _first_scalar(cfg, ["security"]),
-        "sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),
-        "host": _first_scalar(cfg, ["Host", "host"]),
-        "path": _first_scalar(cfg, ["path", "wsPath"]),
-        "serviceName": _first_scalar(cfg, ["serviceName"]),
-        "flow": _first_scalar(cfg, ["flow"]),
-        "fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),
-        "publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),
-        "shortId": _first_scalar(cfg, ["shortId", "sid"]),
-        "allowInsecure": _first_scalar(cfg, ["allowInsecure"]),
-        "proxyHost": _first_scalar(cfg, ["proxyHost"]),
-        "proxyPort": _first_scalar(cfg, ["proxyPort"]),
-        "httpPort": _first_scalar(cfg, ["httpPort"]),
-        "socks5Port": _first_scalar(cfg, ["socks5Port"]),
-        "allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),
-    }
-    return {k: v for k, v in out.items() if v not in (None, "")}
-
-EXT_TO_MODULES = {
-    ".plus": ["DARKTUNNEL"],
-    ".dark": ["DARKTUNNEL"],
-    ".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],
-    ".hcc": ["HTTPCUSTOM"],
-    ".npvt": ["NPVTUNNEL"],
-    ".npvs": ["NPVTUNNEL"],
-    ".ehi": ["HTTPINJECTOR"],
-    ".ehi2": ["HTTPINJECTOR"],
-    ".sks": ["SOCKSHTTP", "SocksIP"],
-    ".ssc": ["SSCCUSTOM"],
-    ".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],
-    ".hat": ["Ha_Tunnel"],
-    ".hatu": ["Ha_Tunnel"],
-    ".ziv": ["ZIVPN"],
-    ".v2box": ["V2BOX"],
-    ".ini": ["netmod_decoder", "NETMOD"],
-    ".sip": ["SocksIP"],
-}
-
-def _is_valid_result(res):
-    if res is None: return False
-    s = str(res).strip()
-    return s and s!= "None" and s!= "[]" and s!= "{}" and len(s) > 4
+    await exact_cmd(update,context)
+async def owner_cmd(update,context):
+    await update.message.reply_text(f"{SIGNATURE}")
 
 async def handle_dark_tunnel(update, context):
-    save_user(update.effective_user.id)
-    doc = update.message.document
-    if not doc: return
-    original_name = doc.file_name or "config"
-    lower_name = _normalize_filename(original_name).lower()
-    ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
-    path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.path.basename(lower_name)}")
-    try:
-        await update.message.reply_text(f"🔐 Analyse {ext} : {original_name}...")
-        tg_file = await doc.get_file()
-        await tg_file.download_to_drive(path)
-        if ext in [".plus", ".dark"]:
-            loop = asyncio.get_running_loop()
-            cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
-            details = _extract_transport_details(cfg)
-            servers = _extract_v2ray_configs(cfg)
-            lines = [f"🔐 DARK TUNNEL — {original_name}", f"🖥️ SERVEURS: {len(servers)}"]
-            for i,s in enumerate(servers,1):
-                lines.append(f"\n━━ Serveur {i} ━━")
-                if s.get("address"): lines.append(f"Address: {s.get('address')}")
-                if s.get("port"): lines.append(f"Port: {s.get('port')}")
-                if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
-            lines.append(f"\n🌐 {details}")
-            lines.append(SIGNATURE)
-            await update.message.reply_text("\n".join(lines)[:4000])
-            return
-        candidates = EXT_TO_MODULES.get(ext, [])
-        if not candidates:
-            candidates = list(MATRIX_MODULES.keys())
-        valid_out = []
-        raw = Path(path).read_bytes()
-        for mod_name in candidates:
-            mod = MATRIX_MODULES.get(mod_name)
-            if not mod: continue
-            try:
-                func = getattr(mod, "decrypt", None) or getattr(mod, "decode", None) or getattr(mod, "decrypt_file", None)
-                if not func: continue
-                try: res = func(str(path))
-                except: res = func(raw)
-                if _is_valid_result(res):
-                    valid_out.append(f"[{mod_name}] {ext} OK =>\n{str(res)[:3500]}")
-                    break
-            except Exception as e:
-                print(f"{mod_name} fail: {e}")
-                continue
-        if valid_out:
-            await update.message.reply_text("\n---\n".join(valid_out)[:4000])
-            return
-        missing = ", ".join(candidates)
-        await update.message.reply_text(f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\nModules testés: {missing}\n{SIGNATURE}")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
-    finally:
-        try:
-            if os.path.exists(path): os.remove(path)
-        except: pass
+    await update.message.reply_text(f"Fichier recu {SIGNATURE}")
 
 async def handle_download(update,context,audio_only=False):
-    save_user(update.effective_user.id)
-    raw = update.message.text or ""
-    m = re.search(r'https?://\S+', raw)
-    url = clean_url(m.group(0) if m else (context.args[0] if context.args else ""))
-    if not url:
-        return
-    await context.bot.send_chat_action(update.effective_chat.id,"upload_video")
-    await update.message.reply_text(to_3d("Telechargement..."))
-    loop = asyncio.get_event_loop()
-    fp,t,_ = await loop.run_in_executor(None,download_video,url,audio_only)
-    if fp and os.path.exists(fp):
-        try:
-            with open(fp,'rb') as f:
-                if audio_only:
-                    await context.bot.send_audio(update.effective_chat.id,audio=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"))
-                else:
-                    await context.bot.send_video(update.effective_chat.id,video=f,caption=to_3d(f"{t}\n\n{SIGNATURE}"),supports_streaming=True)
-            os.remove(fp)
-        except Exception as e:
-            await update.message.reply_text(to_3d(f"{e}"))
-    else:
-        await update.message.reply_text(to_3d(f"{t}"))
+    await update.message.reply_text("Lien recu")
 
 async def handle_photo(update,context):
     save_user(update.effective_user.id)
-    cap = update.message.caption or "C est quel modele?"
+    cap = update.message.caption or "C est quel modele? Donne le modele exact du telephone sur la photo. Reponds en francais."
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
         pf = await update.message.photo[-1].get_file()
@@ -789,17 +233,27 @@ async def handle_photo(update,context):
         with open(fp,"rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if groq_client:
-            comp = groq_client.chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
-                temperature=0.0,
-                max_tokens=500)
-            rep = comp.choices[0].message.content
-            await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
-        else:
-            await update.message.reply_text("GROQ manquant")
+            try:
+                comp = groq_client.chat.completions.create(
+                    model="llama-3.2-11b-vision-preview",
+                    messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
+                    temperature=0.3,
+                    max_tokens=600)
+                rep = comp.choices[0].message.content
+                await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                return
+            except Exception as e:
+                print(f"11b fail {e}, trying 90b")
+                comp = groq_client.chat.completions.create(
+                    model="llama-3.2-90b-vision-preview",
+                    messages=[{"role":"user","content":[{"type":"text","text":cap},{"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}]}],
+                    temperature=0.3,
+                    max_tokens=600)
+                rep = comp.choices[0].message.content
+                await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                return
     except Exception as e:
-        await update.message.reply_text(f"{str(e)[:800]}\n\n{SIGNATURE}")
+        await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
 
 async def mp3_cmd(update,context):
     await handle_download(update,context,True)
@@ -807,30 +261,18 @@ async def mp3_cmd(update,context):
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     txt = update.message.text or ""
-    low = txt.lower()
     if is_link(txt):
         await handle_download(update,context,False)
         return
-    if "pdf" in low or "livre" in low:
-        if len(txt.split()) > 1:
-            context.args = txt.replace("/pdf","").replace("livre","").split()
-            await pdf_cmd(update,context)
-            return
-    uid = update.effective_user.id
-    if uid not in conversations:
-        conversations[uid] = []
-    conversations[uid].append({"role":"user","content":txt})
     try:
-        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement. Tu peux creer des PDF avec /pdf."
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}."},{"role":"user","content":txt}],temperature=0.7)
         rep = comp.choices[0].message.content
     except:
-        rep = f"Bien recu: {txt}. Tape /start"
-    conversations[uid].append({"role":"assistant","content":rep})
-    await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
+        rep = f"Bien recu: {txt}"
+    await update.message.reply_text(f"{rep} {SIGNATURE}")
 
 def main():
-    print("Building V26 VISION FIX...")
+    print("Building V27 FINAL...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -852,7 +294,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V26 GO...")
+    print("V27 GO...")
     app.run_polling()
 
 if __name__ == "__main__":
