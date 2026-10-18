@@ -11,15 +11,14 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")  # <-- NOUVEAU
-print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO ===")
+OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
+print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V33 FACE LOCK ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 except:
     groq_client = None
 
-# === NOUVEAU CLIENT OPENROUTER VISION ===
 openrouter_client = None
 if OPENROUTER_KEY:
     try:
@@ -40,13 +39,11 @@ def home():
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
 
-# === V26 PATCH MATRIXZAT - DEBUT ===
 MATRIX_MODULES = {}
 for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
     try:
         MATRIX_MODULES[mod_name] = __import__(mod_name)
-        print(f"Loaded {mod_name}")
-    except Exception as e:
+    except:
         pass
 
 def universal_matrix_decrypt(path):
@@ -62,7 +59,7 @@ def universal_matrix_decrypt(path):
                 except:
                     res = func(raw)
                 out.append(f"[{name}] OK => {str(res)[:2000]}")
-        except Exception as e:
+        except:
             pass
     return out
 
@@ -74,7 +71,6 @@ async def owner_cmd(update,context):
         await update.message.reply_text(txt)
     except Exception as e:
         await update.message.reply_text(f"err {e}")
-# === V26 PATCH FIN ===
 
 USERS_FILE = "users.txt"
 def save_user(uid):
@@ -104,7 +100,6 @@ def to_3d(t):
     except:
         return t
 
-# === NOUVEAU PDF ESTHETIQUE - CORRIGE ===
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
@@ -149,24 +144,19 @@ def create_pdf_book(title, content):
         print(f"PDF Error {e}")
         return None
 
-def clean_url(u):
-    return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0]
+def clean_url(u): return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0]
 def get_yt_id(u):
     m = re.search(r'(?:v=|be/|shorts/|embed/)([A-Za-z0-9_-]{11})', u)
     return m.group(1) if m else None
-def is_link(t):
-    return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
+def is_link(t): return any(x in t.lower() for x in ["http://","https://","tiktok.com","youtu","instagram.com","fb.watch","facebook.com"])
 def load_vmess():
     try:
         env = os.getenv("VMESS_DATA")
-        if env:
-            return [l.strip() for l in env.splitlines() if l.strip().startswith("vmess://")]
+        if env: return [l.strip() for l in env.splitlines() if l.strip().startswith("vmess://")]
         if os.path.exists("vmess.txt"):
-            with open("vmess.txt","r") as f:
-                return [l.strip() for l in f if l.strip().startswith("vmess://")]
+            with open("vmess.txt","r") as f: return [l.strip() for l in f if l.strip().startswith("vmess://")]
         return []
-    except:
-        return []
+    except: return []
 def get_random_vmess(n=5):
     a = load_vmess()
     return random.sample(a, min(n,len(a))) if a else None
@@ -304,7 +294,7 @@ def create_score_image(t):
     img.save(p)
     return p
 
-# ===== V32 NOUVEAU - IMAGE GEN + EDIT PHOTO (AJOUT SEULEMENT) =====
+# ===== V33 FIX FOND + VISAGE - SEUL AJOUT MODIFIE =====
 def enhance_prompt_for_image(p):
     try:
         if groq_client:
@@ -353,16 +343,18 @@ def upload_to_catbox(path):
 
 def gen_edit_image(prompt, image_url):
     import urllib.parse
-    safe_prompt = urllib.parse.quote(prompt[:600])
+    # FIX: Garde exactement la meme personne, change seulement le fond
+    fixed_prompt = f"Keep the exact same person from the reference image, same face, same skin tone, same blue sweater, same body, 100% identical identity, do not change person. Only change background: {prompt}. Photorealistic, same woman, preserve original face"
+    safe_prompt = urllib.parse.quote(fixed_prompt[:800])
     safe_image = urllib.parse.quote(image_url)
     urls = [
         f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=1024&height=1024&nologo=true&seed={random.randint(0,9999999)}",
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=flux&width=1024&height=1024&nologo=true&seed={random.randint(0,9999999)}"
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=1024&height=1024&nologo=true&enhance=false&seed={random.randint(0,9999999)}"
     ]
     for url in urls:
         try:
-            r = requests.get(url, timeout=120)
-            if r.status_code == 200 and len(r.content) > 20000:
+            r = requests.get(url, timeout=130)
+            if r.status_code == 200 and len(r.content) > 25000:
                 path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
                 with open(path,'wb') as f:
                     f.write(r.content)
@@ -371,7 +363,7 @@ def gen_edit_image(prompt, image_url):
             print(f"edit fail {e}")
             continue
     return None
-# ===== FIN AJOUT V32 =====
+# ===== FIN FIX V33 =====
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -862,24 +854,19 @@ async def handle_download(update,context,audio_only=False):
     else:
         await update.message.reply_text(to_3d(f"{t}"))
 
-# ===== FONCTION PHOTO MODIFIEE - GARDE L'ORIGINAL + AJOUT EDIT =====
 async def handle_photo(update,context):
     save_user(update.effective_user.id)
     cap = (update.message.caption or "").strip()
     low_cap = cap.lower()
-
-    # === MODE EDIT : si legende contient /edit, /img, modifie, etc ===
-    is_edit_mode = any(x in low_cap for x in ["/edit", "/img", "modifie", "change", "transforme", " en ", "style", "cyborg", "roi", "anime", "gta", "vieux", "jeune"])
-
+    is_edit_mode = any(x in low_cap for x in ["/edit", "/img", "modifie", "change", "transforme", " en ", "style", "cyborg", "roi", "anime", "gta", "vieux", "jeune", "avion", "assis"])
     pf = await update.message.photo[-1].get_file()
     fp = f"/tmp/analyse_{update.effective_user.id}.jpg"
     await pf.download_to_drive(fp)
-
     if is_edit_mode:
         prompt = cap.replace("/edit","").replace("/img","").replace("/image","").strip()
         if not prompt or len(prompt) < 3:
             prompt = "make it cinematic, photorealistic, 8k"
-        await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s")
+        await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s\nJe garde ton visage...")
         loop = asyncio.get_event_loop()
         image_url = await loop.run_in_executor(None, upload_to_catbox, fp)
         if not image_url:
@@ -897,8 +884,6 @@ async def handle_photo(update,context):
         else:
             await update.message.reply_text(f"❌ Erreur édition, réessaie {SIGNATURE}")
         return
-
-    # === MODE ORIGINAL VISION (TON CODE INTACT) ===
     cap_vision = cap or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -934,7 +919,7 @@ async def handle_photo(update,context):
                 except Exception as e2:
                     await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
                     return
-        await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision. Groq a supprime tous ses modeles vision en 2026.\n{SIGNATURE}")
+        await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision.\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
 
@@ -959,7 +944,7 @@ async def img_cmd(update,context):
         await update.message.reply_text(f"❌ Erreur génération {SIGNATURE}")
 
 async def edit_cmd(update,context):
-    await update.message.reply_text("✏️ Envoie une photo avec la légende /edit + ton idée\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne dorée")
+    await update.message.reply_text("✏️ Envoie une photo avec la légende /edit + ton idée\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne dorée\n/photo + /edit assise dans un avion")
 
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
@@ -987,7 +972,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT...")
+    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V33...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
