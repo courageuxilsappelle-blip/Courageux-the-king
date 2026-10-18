@@ -12,7 +12,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V33 FACE LOCK ===")
+print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V34 FIX ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -294,7 +294,7 @@ def create_score_image(t):
     img.save(p)
     return p
 
-# ===== V33 FIX FOND + VISAGE - SEUL AJOUT MODIFIE =====
+# ===== V34 FIX - REMPLACE ANCIEN BLOC V32 =====
 def enhance_prompt_for_image(p):
     try:
         if groq_client:
@@ -332,38 +332,63 @@ def gen_image_pollination(prompt):
     return None
 
 def upload_to_catbox(path):
+    # V34 FIX: 3 serveurs + retry
+    servers = [
+        ("https://catbox.moe/user/api.php", {"reqtype":"fileupload"}),
+        ("https://litterbox.catbox.moe/resources/internals/api.php", {"reqtype":"fileupload","time":"24h"}),
+    ]
+    for api_url, data in servers:
+        try:
+            with open(path,'rb') as f:
+                r = requests.post(api_url, data=data, files={"fileToUpload": f}, timeout=60)
+                txt = r.text.strip()
+                if r.status_code == 200 and txt.startswith("https://"):
+                    print(f"UPLOAD OK {api_url} -> {txt}")
+                    return txt
+        except Exception as e:
+            print(f"upload fail {api_url}: {e}")
+            continue
     try:
         with open(path,'rb') as f:
-            r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload": f}, timeout=40)
+            r = requests.post("https://0x0.st", files={"file": f}, timeout=60)
             if r.status_code == 200 and "https://" in r.text:
-                return r.text.strip()
+                txt = r.text.strip()
+                print(f"UPLOAD OK 0x0.st -> {txt}")
+                return txt
     except Exception as e:
-        print(f"catbox fail {e}")
+        print(f"0x0.st fail {e}")
     return None
 
 def gen_edit_image(prompt, image_url):
     import urllib.parse
-    # FIX: Garde exactement la meme personne, change seulement le fond
-    fixed_prompt = f"Keep the exact same person from the reference image, same face, same skin tone, same blue sweater, same body, 100% identical identity, do not change person. Only change background: {prompt}. Photorealistic, same woman, preserve original face"
-    safe_prompt = urllib.parse.quote(fixed_prompt[:800])
+    # V34 FIX: prompt court anglais + garde visage
+    p = prompt.lower()
+    p = p.replace("assis dans un avion","sitting in airplane window seat, airplane interior")
+    p = p.replace("assis","sitting").replace("avion","airplane")
+    p = p[:200]
+    fixed = f"Keep same person identical face, same skin, same blue sweater, {p}, photorealistic, preserve identity 100%"
+    safe_prompt = urllib.parse.quote(fixed)
     safe_image = urllib.parse.quote(image_url)
     urls = [
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=1024&height=1024&nologo=true&seed={random.randint(0,9999999)}",
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=1024&height=1024&nologo=true&enhance=false&seed={random.randint(0,9999999)}"
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=768&height=1024&nologo=true&nofeed=true&seed={random.randint(0,9999999)}",
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=flux&width=768&height=1024&nologo=true&nofeed=true&seed={random.randint(0,9999999)}",
+        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=turbo&width=768&height=1024&nologo=true&seed={random.randint(0,9999999)}"
     ]
     for url in urls:
         try:
-            r = requests.get(url, timeout=130)
-            if r.status_code == 200 and len(r.content) > 25000:
+            print(f"EDIT TRY: {url[:250]}")
+            r = requests.get(url, timeout=140)
+            print(f"EDIT RESP {r.status_code} len {len(r.content)}")
+            if r.status_code == 200 and len(r.content) > 15000 and b"<html" not in r.content[:200].lower():
                 path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
                 with open(path,'wb') as f:
                     f.write(r.content)
                 return path
         except Exception as e:
-            print(f"edit fail {e}")
+            print(f"edit exception {e}")
             continue
     return None
-# ===== FIN FIX V33 =====
+# ===== FIN FIX V34 =====
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -865,7 +890,7 @@ async def handle_photo(update,context):
     if is_edit_mode:
         prompt = cap.replace("/edit","").replace("/img","").replace("/image","").strip()
         if not prompt or len(prompt) < 3:
-            prompt = "make it cinematic, photorealistic, 8k"
+            prompt = "sitting in airplane"
         await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s\nJe garde ton visage...")
         loop = asyncio.get_event_loop()
         image_url = await loop.run_in_executor(None, upload_to_catbox, fp)
@@ -882,7 +907,7 @@ async def handle_photo(update,context):
             except:
                 pass
         else:
-            await update.message.reply_text(f"❌ Erreur édition, réessaie {SIGNATURE}")
+            await update.message.reply_text(f"❌ Erreur édition, réessaie dans 20s {SIGNATURE}")
         return
     cap_vision = cap or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -972,7 +997,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V33...")
+    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V34...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
