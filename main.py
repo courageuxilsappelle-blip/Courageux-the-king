@@ -11,20 +11,21 @@ urllib3.disable_warnings()
 
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V29 DARK TUNNEL + VISION + IMAGE GEN ===")
+OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")  # <-- NOUVEAU
+print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 except:
     groq_client = None
 
+# === NOUVEAU CLIENT OPENROUTER VISION ===
 openrouter_client = None
 if OPENROUTER_KEY:
     try:
         from openai import OpenAI
         openrouter_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_KEY)
-        print("OpenRouter OK")
+        print("OpenRouter client loaded")
     except Exception as e:
         print(f"OpenRouter fail: {e}")
 
@@ -34,26 +35,46 @@ SIGNATURE = "COURAGEUX THE KING"
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def home():
-    return f"Bot {SIGNATURE} V29 LIVE"
+    return f"Bot {SIGNATURE} V25.5 DARK TUNNEL LIVE"
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
 
+# === V26 PATCH MATRIXZAT - DEBUT ===
 MATRIX_MODULES = {}
 for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
     try:
         MATRIX_MODULES[mod_name] = __import__(mod_name)
-    except:
+        print(f"Loaded {mod_name}")
+    except Exception as e:
         pass
+
+def universal_matrix_decrypt(path):
+    from pathlib import Path
+    raw = Path(path).read_bytes()
+    out=[]
+    for name,mod in MATRIX_MODULES.items():
+        try:
+            func = getattr(mod,"decrypt",None) or getattr(mod,"decode",None) or getattr(mod,"decrypt_file",None)
+            if func:
+                try:
+                    res = func(str(path))
+                except:
+                    res = func(raw)
+                out.append(f"[{name}] OK => {str(res)[:2000]}")
+        except Exception as e:
+            pass
+    return out
 
 async def owner_cmd(update,context):
     save_user(update.effective_user.id)
     try:
         r=requests.get("https://api.github.com/repos/matrixzat/vpn-decryptor",timeout=10,headers={"User-Agent":"Mozilla/5.0"}).json()
-        txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\n{SIGNATURE}"
+        txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\nStars: {r.get('stargazers_count')}\nURL: {r.get('html_url')}\nDesc: {r.get('description')}\n\nPublic open-source\n{SIGNATURE}"
         await update.message.reply_text(txt)
     except Exception as e:
         await update.message.reply_text(f"err {e}")
+# === V26 PATCH FIN ===
 
 USERS_FILE = "users.txt"
 def save_user(uid):
@@ -83,6 +104,7 @@ def to_3d(t):
     except:
         return t
 
+# === NOUVEAU PDF ESTHETIQUE - CORRIGE ===
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
@@ -109,7 +131,7 @@ def create_pdf_book(title, content):
             if not para:
                 pdf.ln(6)
                 continue
-            if len(para) < 100 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction')):
+            if len(para) < 100 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction') or para.lower().startswith('conclusion') or para.lower().startswith('partie')):
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(0, 51, 102)
                 pdf.ln(6)
@@ -126,23 +148,6 @@ def create_pdf_book(title, content):
     except Exception as e:
         print(f"PDF Error {e}")
         return None
-
-# ===== NOUVEAU : GENERATION IMAGE =====
-def gen_image_pollination(prompt):
-    import urllib.parse
-    try:
-        safe = urllib.parse.quote(prompt[:300])
-        # Flux + Turbo gratuit
-        url = f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=flux&enhance=true"
-        path = f"/tmp/gen_{random.randint(1000,99999)}.jpg"
-        r = requests.get(url, timeout=90)
-        if r.status_code == 200 and len(r.content) > 10000:
-            with open(path,'wb') as f:
-                f.write(r.content)
-            return path
-    except Exception as e:
-        print(f"gen fail {e}")
-    return None
 
 def clean_url(u):
     return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0]
@@ -246,12 +251,29 @@ def download_video(url, audio_only=False):
             continue
     return None,"Erreur",0
 def get_todays_fixtures():
-    return ["Man United vs Man City","Levante vs Barcelona","Napoli vs Bologna"]
+    REAL = ["Man United vs Man City","Levante vs Barcelona","Napoli vs Bologna"]
+    try:
+        key = os.getenv("API_FOOTBALL_KEY")
+        if not key:
+            return REAL
+        headers = {"x-apisports-key":key}
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        resp = requests.get(f"https://v3.football.api-sports.io/fixtures?date={today}",headers=headers,timeout=15).json()
+        fixtures = resp.get("response",[])
+        big = []
+        for f in fixtures:
+            if f.get("league",{}).get("id",0) not in [39,140,135,78,61,2,3]:
+                continue
+            big.append(f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}")
+        return big[:8] if len(big)>=2 else REAL
+    except:
+        return REAL
 def predict_exact_score(match):
     if not groq_client:
-        return f"{match} => 2-1 (62%)"
+        return f"{match} => 2-1 (62%) Buteurs: Haaland"
     try:
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Score exact EA FC 26 en francais pour: {match}"}],temperature=0.4)
+        prompt = "Score exact EA FC 26 en francais pour: " + match
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
         return comp.choices[0].message.content
     except:
         return f"{match} => 2-1 (62%)"
@@ -284,7 +306,7 @@ def create_score_image(t):
 
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo -> modele\n🎨 /img prompt = genere photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip = blacklist check"))
 
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
@@ -306,18 +328,20 @@ async def pdf_cmd(update,context):
     sujet = " ".join(context.args)
     await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
     try:
-        prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. 1500 mots minimum."
+        prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##."
         contenu = None
-        for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]:
+        last_err = ""
+        for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3-32b"]:
             try:
                 comp = groq_client.chat.completions.create(model=model_id, messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
                 contenu = comp.choices[0].message.content
                 if contenu and len(contenu) > 300:
                     break
-            except:
+            except Exception as e:
+                last_err = str(e)
                 continue
         if not contenu:
-            await update.message.reply_text("Erreur PDF")
+            await update.message.reply_text(f"Erreur PDF: {last_err[:500]}")
             return
         loop = asyncio.get_event_loop()
         pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
@@ -402,9 +426,12 @@ async def bl_cmd(update,context):
     loop = asyncio.get_event_loop()
     listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
     if not listed:
-        txt = f"✅ IP Not Listed\nIP: {ip}\nPropres: {clean}/{total}\n{SIGNATURE}"
+        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\nStatus: PROPRE ✅\nListes checkées: {total}\nPropres: {clean}/{total}\n\n{SIGNATURE}"
     else:
-        txt = f"❌ IP Listed\nIP: {ip}\nBlacklistée sur {len(listed)}/{total}\n{SIGNATURE}"
+        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\nBlacklistée sur {len(listed)}/{total}:\n"
+        for bl in listed:
+            txt += f"❌ {bl}\n"
+        txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
 
 async def exact_cmd(update,context):
@@ -440,7 +467,7 @@ async def today_cmd(update,context):
 def _normalize_filename(name):
     try:
         return unicodedata.normalize("NFKC", name or "")
-    except:
+    except Exception:
         return name or ""
 
 DT_KEY_256 = b"$B&E)H@McQfThWmZq4t7w!z%C*F-JaNd"
@@ -465,15 +492,18 @@ def _aes_cfb_decrypt(data, key):
             in_name, out_name = fi.name, fo.name
         try:
             bits = len(key) * 8
-            p = subprocess.run(["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name], capture_output=True, text=True, timeout=15)
+            p = subprocess.run(
+                ["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],
+                capture_output=True, text=True, timeout=15
+            )
             if p.returncode!= 0:
-                raise RuntimeError(p.stderr.strip())
+                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
             return Path(out_name).read_bytes()
         finally:
             for f in (in_name, out_name):
                 try:
                     os.remove(f)
-                except:
+                except Exception:
                     pass
 
 def _try_json_string(value):
@@ -485,7 +515,7 @@ def _try_json_string(value):
     try:
         fixed = re.sub(r'(:\s*)(\$[A-Za-z0-9_]+)', r'\1"\2"', stripped)
         return _normalize_dark_json(json.loads(fixed))
-    except:
+    except Exception:
         return value
 
 def _normalize_dark_json(value):
@@ -496,7 +526,7 @@ def _normalize_dark_json(value):
     if isinstance(value, bytes):
         try:
             return _try_json_string(value.decode("utf-8"))
-        except:
+        except Exception:
             return list(value)
     if isinstance(value, str):
         return _try_json_string(value)
@@ -509,7 +539,7 @@ def _decrypt_encrypted_fields(obj, key):
             if isinstance(k, str) and k.startswith("Encrypted") and isinstance(v, (bytes, bytearray)):
                 try:
                     result[k] = _aes_cfb_decrypt(bytes(v), key)
-                except:
+                except Exception:
                     result[k] = v
             else:
                 result[k] = _decrypt_encrypted_fields(v, key)
@@ -534,6 +564,8 @@ def decrypt_dark_tunnel_file(path):
         if m:
             payload = m.group(1)
     outer = json.loads(_b64decode_loose(payload).decode("utf-8"))
+    if "encryptedLockedConfig" not in outer:
+        raise ValueError("Champ encryptedLockedConfig absent")
     encrypted = _b64decode_loose(outer["encryptedLockedConfig"])
     decrypted_outer = _aes_cfb_decrypt(encrypted, DT_KEY_256)
     unpacked_outer = _parse_msgpack(decrypted_outer)
@@ -543,6 +575,44 @@ def decrypt_dark_tunnel_file(path):
         unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(unpacked_inner, DT_KEY_192)
     outer["encryptedLockedConfig"] = unpacked_outer
     return _normalize_dark_json(outer)
+
+def _flatten_config(obj, result=None):
+    if result is None:
+        result = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            key = str(k)
+            low = key.lower()
+            if isinstance(v, (str, int, float, bool)):
+                s = str(v)
+                if low in ("address", "server", "serveraddress", "server_address"):
+                    result.setdefault("address", s)
+                elif low in ("port", "serverport", "server_port"):
+                    result.setdefault("port", s)
+                elif low in ("servername", "server_name", "sni"):
+                    result.setdefault("sni", s)
+                elif low == "host":
+                    result.setdefault("host", s)
+                elif low == "path":
+                    result.setdefault("path", s)
+                elif low in ("network", "transport", "transportnetwork"):
+                    result.setdefault("network", s)
+                elif low in ("security", "tls"):
+                    result.setdefault("security", s)
+                elif low in ("protocol", "type"):
+                    result.setdefault("protocol", s)
+                elif low == "flow":
+                    result.setdefault("flow", s)
+                elif low == "email":
+                    result.setdefault("email", s)
+                elif low == "mux":
+                    result.setdefault("mux", s)
+            elif isinstance(v, (dict, list)):
+                _flatten_config(v, result)
+    elif isinstance(obj, list):
+        for item in obj:
+            _flatten_config(item, result)
+    return result
 
 def _first_scalar(obj, names):
     wanted = {str(x).lower() for x in names}
@@ -562,28 +632,84 @@ def _first_scalar(obj, names):
 
 def _extract_v2ray_configs(cfg):
     result = []
+    seen = set()
     def walk(obj):
         if isinstance(obj, dict):
             if "address" in obj and ("port" in obj or "users" in obj):
-                result.append(obj)
+                key = (str(obj.get("address")), str(obj.get("port")), str(obj.get("uuid")))
+                if key not in seen:
+                    seen.add(key)
+                    result.append(obj)
+            users = obj.get("users")
+            if isinstance(users, list):
+                for u in users:
+                    if isinstance(u, dict):
+                        item = dict(u)
+                        if "address" not in item and obj.get("address") is not None:
+                            item["address"] = obj.get("address")
+                        if "port" not in item and obj.get("port") is not None:
+                            item["port"] = obj.get("port")
+                        result.append(item)
             for v in obj.values():
                 walk(v)
         elif isinstance(obj, list):
             for v in obj:
                 walk(v)
     walk(cfg)
-    return result
+    unique = []
+    seen2 = set()
+    for x in result:
+        key = (str(x.get("address")), str(x.get("port")), str(x.get("id") or x.get("uuid") or x.get("password")))
+        if key not in seen2:
+            seen2.add(key)
+            unique.append(x)
+    return unique
 
 def _extract_transport_details(cfg):
-    out = {"network": _first_scalar(cfg, ["network"]), "sni": _first_scalar(cfg, ["sni","serverName"]), "host": _first_scalar(cfg, ["host"]), "path": _first_scalar(cfg, ["path"])}
-    return {k: v for k, v in out.items() if v}
+    out = {
+        "network": _first_scalar(cfg, ["network", "transportNetwork"]),
+        "security": _first_scalar(cfg, ["security"]),
+        "sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),
+        "host": _first_scalar(cfg, ["Host", "host"]),
+        "path": _first_scalar(cfg, ["path", "wsPath"]),
+        "serviceName": _first_scalar(cfg, ["serviceName"]),
+        "flow": _first_scalar(cfg, ["flow"]),
+        "fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),
+        "publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),
+        "shortId": _first_scalar(cfg, ["shortId", "sid"]),
+        "allowInsecure": _first_scalar(cfg, ["allowInsecure"]),
+        "proxyHost": _first_scalar(cfg, ["proxyHost"]),
+        "proxyPort": _first_scalar(cfg, ["proxyPort"]),
+        "httpPort": _first_scalar(cfg, ["httpPort"]),
+        "socks5Port": _first_scalar(cfg, ["socks5Port"]),
+        "allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),
+    }
+    return {k: v for k, v in out.items() if v not in (None, "")}
 
-EXT_TO_MODULES = {".plus": ["DARKTUNNEL"], ".dark": ["DARKTUNNEL"], ".hc": ["HTTPCUSTOM"], ".ehi": ["HTTPINJECTOR"]}
+EXT_TO_MODULES = {
+    ".plus": ["DARKTUNNEL"],
+    ".dark": ["DARKTUNNEL"],
+    ".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],
+    ".hcc": ["HTTPCUSTOM"],
+    ".npvt": ["NPVTUNNEL"],
+    ".npvs": ["NPVTUNNEL"],
+    ".ehi": ["HTTPINJECTOR"],
+    ".ehi2": ["HTTPINJECTOR"],
+    ".sks": ["SOCKSHTTP", "SocksIP"],
+    ".ssc": ["SSCCUSTOM"],
+    ".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],
+    ".hat": ["Ha_Tunnel"],
+    ".hatu": ["Ha_Tunnel"],
+    ".ziv": ["ZIVPN"],
+    ".v2box": ["V2BOX"],
+    ".ini": ["netmod_decoder", "NETMOD"],
+    ".sip": ["SocksIP"],
+}
 
 def _is_valid_result(res):
     if res is None: return False
     s = str(res).strip()
-    return s and s!= "None" and len(s) > 4
+    return s and s!= "None" and s!= "[]" and s!= "{}" and len(s) > 4
 
 async def handle_dark_tunnel(update, context):
     save_user(update.effective_user.id)
@@ -600,9 +726,42 @@ async def handle_dark_tunnel(update, context):
         if ext in [".plus", ".dark"]:
             loop = asyncio.get_running_loop()
             cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
-            await update.message.reply_text(f"🔐 DARK TUNNEL OK {str(cfg)[:3500]} {SIGNATURE}")
+            details = _extract_transport_details(cfg)
+            servers = _extract_v2ray_configs(cfg)
+            lines = [f"🔐 DARK TUNNEL — {original_name}", f"🖥️ SERVEURS: {len(servers)}"]
+            for i,s in enumerate(servers,1):
+                lines.append(f"\n━━ Serveur {i} ━━")
+                if s.get("address"): lines.append(f"Address: {s.get('address')}")
+                if s.get("port"): lines.append(f"Port: {s.get('port')}")
+                if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
+            lines.append(f"\n🌐 {details}")
+            lines.append(SIGNATURE)
+            await update.message.reply_text("\n".join(lines)[:4000])
             return
-        await update.message.reply_text(f"Format {ext} recu {SIGNATURE}")
+        candidates = EXT_TO_MODULES.get(ext, [])
+        if not candidates:
+            candidates = list(MATRIX_MODULES.keys())
+        valid_out = []
+        raw = Path(path).read_bytes()
+        for mod_name in candidates:
+            mod = MATRIX_MODULES.get(mod_name)
+            if not mod: continue
+            try:
+                func = getattr(mod, "decrypt", None) or getattr(mod, "decode", None) or getattr(mod, "decrypt_file", None)
+                if not func: continue
+                try: res = func(str(path))
+                except: res = func(raw)
+                if _is_valid_result(res):
+                    valid_out.append(f"[{mod_name}] {ext} OK =>\n{str(res)[:3500]}")
+                    break
+            except Exception as e:
+                print(f"{mod_name} fail: {e}")
+                continue
+        if valid_out:
+            await update.message.reply_text("\n---\n".join(valid_out)[:4000])
+            return
+        missing = ", ".join(candidates)
+        await update.message.reply_text(f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\nModules testés: {missing}\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
     finally:
@@ -634,6 +793,7 @@ async def handle_download(update,context,audio_only=False):
     else:
         await update.message.reply_text(to_3d(f"{t}"))
 
+# ===== NOUVELLE FONCTION PHOTO AVEC OPENROUTER (SEUL AJOUT) =====
 async def handle_photo(update,context):
     save_user(update.effective_user.id)
     cap = update.message.caption or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
@@ -644,52 +804,56 @@ async def handle_photo(update,context):
         await pf.download_to_drive(fp)
         with open(fp,"rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
+
+        # 1. PRIORITE OPENROUTER (VISION FREE 2026)
         if openrouter_client:
             try:
                 comp = openrouter_client.chat.completions.create(
                     model="qwen/qwen-2.5-vl-72b-instruct",
-                    messages=[{"role":"user","content":[{"type":"text","text": cap},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],
+                    messages=[{"role":"user","content":[
+                        {"type":"text","text": cap},
+                        {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
+                    ]}],
                     max_tokens=600
                 )
                 rep = comp.choices[0].message.content
                 await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
-                print(f"OpenRouter fail {e}")
-        await update.message.reply_text(f"Vision fail {SIGNATURE}")
+                print(f"OpenRouter qwen fail {e}, try fallback")
+                try:
+                    comp = openrouter_client.chat.completions.create(
+                        model="google/gemini-2.0-flash-001",
+                        messages=[{"role":"user","content":[
+                            {"type":"text","text": cap},
+                            {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
+                        ]}],
+                        max_tokens=600
+                    )
+                    rep = comp.choices[0].message.content
+                    await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                    return
+                except Exception as e2:
+                    await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
+                    return
+
+        # 2. Si pas de clé OpenRouter
+        await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision. Groq a supprime tous ses modeles vision en 2026.\n{SIGNATURE}")
+
     except Exception as e:
         await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
 
 async def mp3_cmd(update,context):
     await handle_download(update,context,True)
 
-# ===== COMMANDE IMAGE GEN =====
-async def img_cmd(update,context):
-    save_user(update.effective_user.id)
-    if not context.args:
-        await update.message.reply_text("🎨 /img + idee\nEx: /img lion roi couronne dorée\n/img belle voiture futuriste\n/img logo COURAGEUX")
-        return
-    prompt = " ".join(context.args)
-    await update.message.reply_text(f"🎨 Génération en cours: {prompt}... 15s")
-    loop = asyncio.get_event_loop()
-    img_path = await loop.run_in_executor(None, gen_image_pollination, prompt)
-    if img_path and os.path.exists(img_path):
-        try:
-            with open(img_path,'rb') as f:
-                await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"🖼️ {prompt}\n{SIGNATURE}")
-            os.remove(img_path)
-        except Exception as e:
-            await update.message.reply_text(f"Erreur envoi: {e}")
-    else:
-        await update.message.reply_text(f"❌ Erreur génération, réessaie {SIGNATURE}")
-
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     txt = update.message.text or ""
+    low = txt.lower()
     if is_link(txt):
         await handle_download(update,context,False)
         return
-    if "pdf" in txt.lower() or "livre" in txt.lower():
+    if "pdf" in low or "livre" in low:
         if len(txt.split()) > 1:
             context.args = txt.replace("/pdf","").replace("livre","").split()
             await pdf_cmd(update,context)
@@ -699,15 +863,16 @@ async def chat_gpt(update,context):
         conversations[uid] = []
     conversations[uid].append({"role":"user","content":txt})
     try:
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}."}]+conversations[uid][-10:],temperature=0.7)
+        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement. Tu peux creer des PDF avec /pdf."
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
         rep = comp.choices[0].message.content
     except:
-        rep = f"Bien recu: {txt}"
+        rep = f"Bien recu: {txt}. Tape /start"
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V29 IMAGE GEN...")
+    print("Building V25.5 DARK TUNNEL + OPENROUTER...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -726,14 +891,10 @@ def main():
     app.add_handler(CommandHandler("tous", today_cmd))
     app.add_handler(CommandHandler("owner", owner_cmd))
     app.add_handler(CommandHandler("audit", owner_cmd))
-    app.add_handler(CommandHandler("img", img_cmd))
-    app.add_handler(CommandHandler("image", img_cmd))
-    app.add_handler(CommandHandler("gen", img_cmd))
-    app.add_handler(CommandHandler("photo", img_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V29 GO...")
+    print("V25.5 GO...")
     app.run_polling()
 
 if __name__ == "__main__":
