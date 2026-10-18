@@ -12,7 +12,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V34 FIX ===")
+print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V35 FIX NULL ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -294,7 +294,7 @@ def create_score_image(t):
     img.save(p)
     return p
 
-# ===== V34 FIX - REMPLACE ANCIEN BLOC V32 =====
+# ===== V35 FIX NULL - REMPLACE V34 =====
 def enhance_prompt_for_image(p):
     try:
         if groq_client:
@@ -317,7 +317,6 @@ def gen_image_pollination(prompt):
     safe = urllib.parse.quote(enhanced[:600])
     urls = [
         f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=flux&seed={random.randint(0,9999999)}",
-        f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=turbo&seed={random.randint(0,9999999)}"
     ]
     for url in urls:
         try:
@@ -332,63 +331,73 @@ def gen_image_pollination(prompt):
     return None
 
 def upload_to_catbox(path):
-    # V34 FIX: 3 serveurs + retry
-    servers = [
-        ("https://catbox.moe/user/api.php", {"reqtype":"fileupload"}),
-        ("https://litterbox.catbox.moe/resources/internals/api.php", {"reqtype":"fileupload","time":"24h"}),
-    ]
-    for api_url, data in servers:
-        try:
-            with open(path,'rb') as f:
-                r = requests.post(api_url, data=data, files={"fileToUpload": f}, timeout=60)
-                txt = r.text.strip()
-                if r.status_code == 200 and txt.startswith("https://"):
-                    print(f"UPLOAD OK {api_url} -> {txt}")
-                    return txt
-        except Exception as e:
-            print(f"upload fail {api_url}: {e}")
-            continue
+    # Gardé pour compatibilité mais plus utilisé
     try:
         with open(path,'rb') as f:
-            r = requests.post("https://0x0.st", files={"file": f}, timeout=60)
+            r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload": f}, timeout=40)
             if r.status_code == 200 and "https://" in r.text:
-                txt = r.text.strip()
-                print(f"UPLOAD OK 0x0.st -> {txt}")
-                return txt
-    except Exception as e:
-        print(f"0x0.st fail {e}")
-    return None
+                return r.text.strip()
+    except:
+        pass
+    return path  # retourne le chemin local pour V35
 
-def gen_edit_image(prompt, image_url):
-    import urllib.parse
-    # V34 FIX: prompt court anglais + garde visage
-    p = prompt.lower()
-    p = p.replace("assis dans un avion","sitting in airplane window seat, airplane interior")
-    p = p.replace("assis","sitting").replace("avion","airplane")
-    p = p[:200]
-    fixed = f"Keep same person identical face, same skin, same blue sweater, {p}, photorealistic, preserve identity 100%"
-    safe_prompt = urllib.parse.quote(fixed)
-    safe_image = urllib.parse.quote(image_url)
-    urls = [
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=kontext&width=768&height=1024&nologo=true&nofeed=true&seed={random.randint(0,9999999)}",
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=flux&width=768&height=1024&nologo=true&nofeed=true&seed={random.randint(0,9999999)}",
-        f"https://image.pollinations.ai/prompt/{safe_prompt}?image={safe_image}&model=turbo&width=768&height=1024&nologo=true&seed={random.randint(0,9999999)}"
-    ]
-    for url in urls:
-        try:
-            print(f"EDIT TRY: {url[:250]}")
-            r = requests.get(url, timeout=140)
-            print(f"EDIT RESP {r.status_code} len {len(r.content)}")
-            if r.status_code == 200 and len(r.content) > 15000 and b"<html" not in r.content[:200].lower():
+def gen_edit_image(prompt, image_path):
+    import urllib.parse, base64
+    try:
+        p = prompt.lower()
+        p = p.replace("assis dans un jardin sans changer la face ni les traits du visage résolution 8k","sitting in beautiful garden")
+        p = p.replace("assis dans un jardin","sitting in beautiful garden")
+        p = p.replace("assis dans un avion","sitting in airplane window seat")
+        p = p.replace("assis","sitting").replace("avion","airplane").replace("jardin","garden")
+        p = "".join([c for c in p if ord(c) < 128]) # supprime accents
+        p = p[:180]
+        final_prompt = f"Keep exact same woman, same face, same skin, same white lace dress, {p}, photorealistic, preserve identity"
+
+        if not os.path.exists(image_path):
+            print(f"File not found {image_path}")
+            return None
+
+        with open(image_path, 'rb') as f:
+            b64_data = base64.b64encode(f.read()).decode('utf-8')
+
+        payload = {
+            "prompt": final_prompt,
+            "image": f"data:image/jpeg;base64,{b64_data}",
+            "model": "kontext",
+            "width": 768,
+            "height": 1024,
+            "nologo": True
+        }
+        print(f"POST kontext {final_prompt}")
+        r = requests.post("https://image.pollinations.ai/api/generate", json=payload, timeout=150)
+        print(f"RESP {r.status_code} len {len(r.content)}")
+        if r.status_code == 200:
+            if len(r.content) > 15000 and b"<html" not in r.content[:200].lower():
+                # Si JSON avec URL
+                try:
+                    js = r.json()
+                    img_url = js.get("image") or js.get("url") or js.get("imageURL")
+                    if img_url:
+                        print(f"Got URL {img_url}")
+                        rr = requests.get(img_url, timeout=60)
+                        if rr.status_code == 200 and len(rr.content) > 10000:
+                            path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
+                            with open(path,'wb') as f:
+                                f.write(rr.content)
+                            return path
+                except:
+                    pass
+                # Sinon binaire direct
                 path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
                 with open(path,'wb') as f:
                     f.write(r.content)
                 return path
-        except Exception as e:
-            print(f"edit exception {e}")
-            continue
+            else:
+                print(f"Error body {r.text[:500]}")
+    except Exception as e:
+        print(f"gen_edit_image error {e}")
     return None
-# ===== FIN FIX V34 =====
+# ===== FIN V35 =====
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -883,21 +892,18 @@ async def handle_photo(update,context):
     save_user(update.effective_user.id)
     cap = (update.message.caption or "").strip()
     low_cap = cap.lower()
-    is_edit_mode = any(x in low_cap for x in ["/edit", "/img", "modifie", "change", "transforme", " en ", "style", "cyborg", "roi", "anime", "gta", "vieux", "jeune", "avion", "assis"])
+    is_edit_mode = any(x in low_cap for x in ["/edit", "/img", "modifie", "change", "transforme", " en ", "style", "cyborg", "roi", "anime", "gta", "vieux", "jeune", "avion", "assis", "jardin"])
     pf = await update.message.photo[-1].get_file()
     fp = f"/tmp/analyse_{update.effective_user.id}.jpg"
     await pf.download_to_drive(fp)
     if is_edit_mode:
         prompt = cap.replace("/edit","").replace("/img","").replace("/image","").strip()
         if not prompt or len(prompt) < 3:
-            prompt = "sitting in airplane"
+            prompt = "sitting in beautiful garden"
         await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s\nJe garde ton visage...")
         loop = asyncio.get_event_loop()
-        image_url = await loop.run_in_executor(None, upload_to_catbox, fp)
-        if not image_url:
-            await update.message.reply_text(f"❌ Erreur upload image {SIGNATURE}")
-            return
-        edited_path = await loop.run_in_executor(None, gen_edit_image, prompt, image_url)
+        # V35 FIX: on passe directement fp, pas d'URL
+        edited_path = await loop.run_in_executor(None, gen_edit_image, prompt, fp)
         if edited_path and os.path.exists(edited_path):
             with open(edited_path,'rb') as f:
                 await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"✏️ {prompt}\n{SIGNATURE}")
@@ -997,7 +1003,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V34...")
+    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V35...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
