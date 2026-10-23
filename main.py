@@ -40,7 +40,7 @@ threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv
 time.sleep(1)
 
 MATRIX_MODULES = {}
-for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel"]:
+for mod_name in ["DARKTUNNEL","HTTPCUSTOM","HTTPINJECTOR","NPVTUNNEL","NETMOD","OPENTUNNEL_TNL","SOCKSHTTP","SSCCUSTOM","SocksIP","Ha_Tunnel","ZIVPN","V2BOX","netmod_decoder","HL_Tunnel","HttpCustom","OpenTunnel","GBL_CLOUD_243"]:
     try:
         MATRIX_MODULES[mod_name] = __import__(mod_name)
     except:
@@ -799,6 +799,9 @@ EXT_TO_MODULES = {
     ".v2box": ["V2BOX"],
     ".ini": ["netmod_decoder", "NETMOD"],
     ".sip": ["SocksIP"],
+    ".gbl": ["GBL_CLOUD_243"],
+    ".gblc": ["GBL_CLOUD_243"],
+    ".243": ["GBL_CLOUD_243"],
 }
 
 def _is_valid_result(res):
