@@ -9,3 +9,4 @@ msgpack
 pycryptodome
 fpdf2
 openai
+flask-cors
