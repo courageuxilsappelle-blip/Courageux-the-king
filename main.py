@@ -46,6 +46,23 @@ def api_chat():
         data = request.get_json() or {}
         user_text = data.get('message','').strip()
         user_id = data.get('user_id','app_user')
+        # === AJOUT PHOTO SANS RIEN EFFACER ===
+        image_b64 = data.get('image')
+        has_image = data.get('hasImage')
+        if has_image and image_b64 and openrouter_client:
+            try:
+                if not image_b64.startswith("data:"):
+                    image_b64 = f"data:image/jpeg;base64,{image_b64}"
+                comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": user_text or "Analyse cette image, quel est le processeur? Reponds en francais detaille."},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
+                rep = comp.choices[0].message.content
+                if user_id not in conversations:
+                    conversations[user_id]=[]
+                conversations[user_id].append({"role":"user","content":user_text+" [photo]"})
+                conversations[user_id].append({"role":"assistant","content":rep})
+                return jsonify({"reponse":rep})
+            except Exception as e:
+                print(f"Vision error {e}")
+        # === FIN AJOUT ===
         if not user_text:
             return jsonify({"reponse":"Envoie un message"})
         if user_id not in conversations:
@@ -60,7 +77,7 @@ def api_chat():
 
 @flask_app.route('/app')
 def app_page():
-    return """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>App</title><style>body{font-family:Arial;background:#0f172a;color:white;margin:0;display:flex;flex-direction:column;height:100vh}#chat{flex:1;overflow-y:auto;padding:15px}.msg{padding:12px;margin:8px 0;border-radius:18px;max-width:85%}.user{background:#0084ff;margin-left:auto}.ia{background:#1e293b;white-space:pre-wrap}#box{display:flex;padding:12px;background:#1e293b}input{flex:1;padding:14px;border-radius:25px;border:none;background:#334155;color:white}button{padding:14px 22px;border-radius:25px;border:none;background:#0084ff;color:white}</style></head><body><div id="chat"><div class='msg ia'>Salut !</div></div><div id="box"><input id="m" placeholder="Ecris..." onkeypress="if(event.key==='Enter')send()"><button onclick="send()">Envoyer</button></div><script>async function send(){let i=document.getElementById('m'),t=i.value.trim();if(!t)return;let c=document.getElementById('chat');c.innerHTML+=`<div class='msg user'>${t}</div>`;i.value='';let id='l-'+Date.now();c.innerHTML+=`<div class='msg ia' id='${id}'>...</div>`;let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t,user_id:'android'})});let d=await r.json();document.getElementById(id).innerHTML=d.reponse;c.scrollTop=c.scrollHeight;}</script></body></html>"""
+    return """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>App</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>*{font-family:'Poppins',sans-serif !important}body{font-family:'Poppins',Arial;background:#0f172a;color:white;margin:0;display:flex;flex-direction:column;height:100vh}#chat{flex:1;overflow-y:auto;padding:15px}.msg{padding:12px;margin:8px 0;border-radius:18px;max-width:85%}.user{background:#0084ff;margin-left:auto}.ia{background:#1e293b;white-space:pre-wrap}#box{display:flex;padding:12px;background:#1e293b}input{flex:1;padding:14px;border-radius:25px;border:none;background:#334155;color:white}button{padding:14px 22px;border-radius:25px;border:none;background:#0084ff;color:white}</style></head><body><div id="chat"><div class='msg ia'>Salut !</div></div><div id="box"><input id="m" placeholder="Ecris..." onkeypress="if(event.key==='Enter')send()"><button onclick="send()">Envoyer</button></div><script>async function send(){let i=document.getElementById('m'),t=i.value.trim();if(!t)return;let c=document.getElementById('chat');c.innerHTML+=`<div class='msg user'>${t}</div>`;i.value='';let id='l-'+Date.now();c.innerHTML+=`<div class='msg ia' id='${id}'>...</div>`;let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t,user_id:'android'})});let d=await r.json();document.getElementById(id).innerHTML=d.reponse;c.scrollTop=c.scrollHeight;}</script></body></html>"""
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
