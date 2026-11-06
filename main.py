@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.4 + APP MOBILE + FILE FIX BIN ===")
+print("=== V25.5 APP MOBILE FILE FIX SANS ETOILES ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -46,7 +46,6 @@ def api_chat():
         data = request.get_json() or {}
         user_text = data.get('message','').strip()
         user_id = data.get('user_id','app_user')
-        # === AJOUT PHOTO SANS RIEN EFFACER ===
         image_b64 = data.get('image')
         has_image = data.get('hasImage')
         if has_image and image_b64 and openrouter_client:
@@ -63,13 +62,12 @@ def api_chat():
             except Exception as e:
                 print(f"Vision error {e}")
 
-        # === NOUVEAU AJOUT FILE - BIN FIX + EMOJI FIX - SANS RIEN SUPPRIMER ===
         file_b64 = data.get('file')
         file_name = data.get('fileName', 'fichier.bin')
         has_file = data.get('hasFile')
         if has_file and file_b64:
             try:
-                print(f"📄 APP FILE RECU: {file_name} | hasFile={has_file} | len={len(file_b64)}")
+                print(f"APP FILE RECU: {file_name} len={len(file_b64)}")
                 safe_name = re.sub(r'[^\w\.\-]', '_', file_name)
                 if not safe_name or safe_name.strip('_') == '':
                     safe_name = f"file_{int(time.time())}.bin"
@@ -80,24 +78,28 @@ def api_chat():
                 tmp_path = os.path.join(tempfile.gettempdir(), f"app_{safe_name}")
                 with open(tmp_path, 'wb') as out:
                     out.write(file_bytes)
-                print(f"📄 Sauvegardé {tmp_path} {len(file_bytes)} bytes")
+                print(f"Sauve {tmp_path} {len(file_bytes)} bytes")
 
                 lower_name = file_name.lower()
                 ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
                 
                 if ext in [".plus", ".dark"]:
                     try:
+                        if not os.path.exists(tmp_path):
+                            with open(tmp_path, 'wb') as out:
+                                out.write(file_bytes)
                         cfg = decrypt_dark_tunnel_file(tmp_path)
                         details = _extract_transport_details(cfg)
                         servers = _extract_v2ray_configs(cfg)
-                        lines = [f"🔐 DARK TUNNEL — {file_name}", f"🖥️ SERVEURS: {len(servers)}"]
-                        for i,s in enumerate(servers,1):
-                            lines.append(f"\n━━ Serveur {i} ━━")
+                        lines = [f"DARK TUNNEL - {file_name} ({len(file_bytes)} bytes)", f"SERVEURS: {len(servers)}"]
+                        for i,s in enumerate(servers[:10],1):
+                            lines.append(f"\n-- Serveur {i} --")
                             if s.get("address"): lines.append(f"Address: {s.get('address')}")
                             if s.get("port"): lines.append(f"Port: {s.get('port')}")
                             if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
-                        lines.append(f"\n🌐 {details}")
-                        lines.append(SIGNATURE)
+                            if s.get("password"): lines.append(f"Pass: {s.get('password')}")
+                        lines.append(f"\nTRANSPORT: {details}")
+                        lines.append(f"\n{SIGNATURE}")
                         rep = "\n".join(lines)
                         try: os.remove(tmp_path)
                         except: pass
@@ -107,7 +109,17 @@ def api_chat():
                         conversations[user_id].append({"role":"assistant","content":rep})
                         return jsonify({"reponse": rep})
                     except Exception as e:
-                        print(f"dark decrypt app error {e}")
+                        import traceback
+                        err = traceback.format_exc()
+                        print(f"DARK DECRYPT ERROR: {e}\n{err}")
+                        try:
+                            txt_brut = file_bytes.decode('utf-8', errors='ignore')[:2000]
+                        except:
+                            txt_brut = file_bytes[:500].hex()
+                        rep = f"Erreur decrypt {file_name}: {str(e)[:500]}\n\nContenu brut ({len(file_bytes)} bytes):\n{txt_brut}\n\n{SIGNATURE}"
+                        try: os.remove(tmp_path)
+                        except: pass
+                        return jsonify({"reponse": rep})
 
                 candidates = EXT_TO_MODULES.get(ext, [])
                 if not candidates:
@@ -133,13 +145,13 @@ def api_chat():
                 except: pass
 
                 if valid_out:
-                    rep = f"📄 **{file_name} DÉCRYPTÉ (APP):**\n\n" + "\n---\n".join(valid_out)
+                    rep = f"FICHIER {file_name} DECRYPTE (APP):\n\n" + "\n---\n".join(valid_out)
                 else:
                     try:
                         txt = file_bytes.decode('utf-8', errors='ignore')[:3000]
-                        rep = f"📄 **{file_name} ({len(file_bytes)} bytes):**\n\n{txt}\n\n{SIGNATURE}"
+                        rep = f"FICHIER {file_name} ({len(file_bytes)} bytes):\n\n{txt}\n\n{SIGNATURE}"
                     except:
-                        rep = f"📄 **{file_name} reçu ({len(file_bytes)} bytes)** mais format non supporté, modules testés: {', '.join(candidates)}\n\n{SIGNATURE}"
+                        rep = f"FICHIER {file_name} recu ({len(file_bytes)} bytes) mais format non supporte, modules testes: {', '.join(candidates)}\n\n{SIGNATURE}"
 
                 if user_id not in conversations:
                     conversations[user_id]=[]
@@ -150,8 +162,7 @@ def api_chat():
             except Exception as e:
                 print(f"File APP error {e}")
                 import traceback; traceback.print_exc()
-                return jsonify({"reponse": f"❌ Erreur lecture {file_name}: {str(e)}"})
-        # === FIN AJOUT FILE ===
+                return jsonify({"reponse": f"Erreur lecture {file_name}: {str(e)}"})
 
         if not user_text:
             return jsonify({"reponse":"Envoie un message"})
@@ -507,7 +518,7 @@ def gen_edit_image(prompt, image_path):
     return None
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo = analyse\n✏️ Photo + /edit prompt = modifie\n🎨 /img prompt = genere photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\nPhoto = analyse\nPhoto + /edit prompt = modifie\n/img prompt = genere photo\nLien YT/TikTok\n/exact Team vs Team\n/today\n/scan host\n/pdf sujet\n/vmess /stats\n/bl ip"))
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
     await update.message.reply_text(f"Total: {get_total_users()}\n{SIGNATURE}")
@@ -521,10 +532,10 @@ async def vmess_cmd(update,context):
 async def pdf_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("📚 /pdf + sujet Ex: /pdf guide business")
+        await update.message.reply_text(" /pdf + sujet Ex: /pdf guide business")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"Generation livre: {sujet}... 20s")
     try:
         prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##."
         contenu = None
@@ -554,7 +565,7 @@ async def pdf_cmd(update,context):
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("📡 /mtr 1.1.1.1 8.8.8.8")
+        await update.message.reply_text(" /mtr 1.1.1.1 8.8.8.8")
         return
     raw = " ".join(context.args)
     ips = re.findall(r'\b\d+\.\d+\.\d+\.\d+\b', raw)
@@ -573,7 +584,7 @@ async def mtr_cmd(update,context):
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🔍 /scan host")
+        await update.message.reply_text(" /scan host")
         return
     host = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -607,7 +618,7 @@ async def scan200_cmd(update,context):
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🛡️ Usage: /bl 34.120.159.235")
+        await update.message.reply_text(" Usage: /bl 34.120.159.235")
         return
     ip = context.args[0].replace("http://","").replace("https://","").split("/")[0].split(":")[0]
     try:
@@ -616,21 +627,21 @@ async def bl_cmd(update,context):
     except:
         pass
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
-    await update.message.reply_text(f"🛡️ Vérif blacklist {ip}... 5s")
+    await update.message.reply_text(f" Verif blacklist {ip}... 5s")
     loop = asyncio.get_event_loop()
     listed, clean, total = await loop.run_in_executor(None, check_blacklist_dns, ip)
     if not listed:
-        txt = f"✅ IP Not Listed (Good!)\n\nIP: {ip}\nStatus: PROPRE ✅\nListes checkées: {total}\nPropres: {clean}/{total}\n\n{SIGNATURE}"
+        txt = f"IP Not Listed (Good!)\n\nIP: {ip}\nStatus: PROPRE\nListes checkees: {total}\nPropres: {clean}/{total}\n\n{SIGNATURE}"
     else:
-        txt = f"❌ IP Listed (Bad!)\n\nIP: {ip}\nBlacklistée sur {len(listed)}/{total}:\n"
+        txt = f"IP Listed (Bad!)\n\nIP: {ip}\nBlacklistee sur {len(listed)}/{total}:\n"
         for bl in listed:
-            txt += f"❌ {bl}\n"
+            txt += f"{bl}\n"
         txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🎯 /exact Man City vs Arsenal")
+        await update.message.reply_text(" /exact Man City vs Arsenal")
         return
     pred = predict_exact_score(" ".join(context.args))
     try:
@@ -682,7 +693,7 @@ def _aes_cfb_decrypt(data, key):
             bits = len(key) * 8
             p = subprocess.run(["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],capture_output=True, text=True, timeout=15)
             if p.returncode!= 0:
-                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
+                raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a echoue")
             return Path(out_name).read_bytes()
         finally:
             for f in (in_name, out_name):
@@ -858,7 +869,7 @@ async def handle_dark_tunnel(update, context):
     ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
     path = os.path.join(tempfile.gettempdir(), f"dt_{update.effective_user.id}_{os.path.basename(lower_name)}")
     try:
-        await update.message.reply_text(f"🔐 Analyse {ext} : {original_name}...")
+        await update.message.reply_text(f"Analyse {ext} : {original_name}...")
         tg_file = await doc.get_file()
         await tg_file.download_to_drive(path)
         if ext in [".plus", ".dark"]:
@@ -866,13 +877,13 @@ async def handle_dark_tunnel(update, context):
             cfg = await loop.run_in_executor(None, decrypt_dark_tunnel_file, path)
             details = _extract_transport_details(cfg)
             servers = _extract_v2ray_configs(cfg)
-            lines = [f"🔐 DARK TUNNEL — {original_name}", f"🖥️ SERVEURS: {len(servers)}"]
+            lines = [f"DARK TUNNEL - {original_name}", f"SERVEURS: {len(servers)}"]
             for i,s in enumerate(servers,1):
-                lines.append(f"\n━━ Serveur {i} ━━")
+                lines.append(f"\n-- Serveur {i} --")
                 if s.get("address"): lines.append(f"Address: {s.get('address')}")
                 if s.get("port"): lines.append(f"Port: {s.get('port')}")
                 if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
-            lines.append(f"\n🌐 {details}")
+            lines.append(f"\n{details}")
             lines.append(SIGNATURE)
             await update.message.reply_text("\n".join(lines)[:4000])
             return
@@ -899,9 +910,9 @@ async def handle_dark_tunnel(update, context):
             await update.message.reply_text("\n---\n".join(valid_out)[:4000])
             return
         missing = ", ".join(candidates)
-        await update.message.reply_text(f"❌ Format {ext} détecté ({original_name}) mais aucun module n'a pu le décoder.\nModules testés: {missing}\n{SIGNATURE}")
+        await update.message.reply_text(f"Format {ext} detecte ({original_name}) mais aucun module n'a pu le decoder.\nModules testes: {missing}\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
+        await update.message.reply_text(f"Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
     finally:
         try:
             if os.path.exists(path): os.remove(path)
@@ -941,19 +952,19 @@ async def handle_photo(update,context):
         prompt = cap.replace("/edit","").replace("/img","").replace("/image","").strip()
         if not prompt or len(prompt) < 3:
             prompt = "sitting in beautiful garden"
-        await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s\nJe garde ton visage...")
+        await update.message.reply_text(f"Modification en cours: {prompt}... 25s\nJe garde ton visage...")
         loop = asyncio.get_event_loop()
         edited_path = await loop.run_in_executor(None, gen_edit_image, prompt, fp)
         if edited_path and os.path.exists(edited_path):
             with open(edited_path,'rb') as f:
-                await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"✏️ {prompt}\n{SIGNATURE}")
+                await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"{prompt}\n{SIGNATURE}")
             try:
                 os.remove(edited_path)
                 os.remove(fp)
             except:
                 pass
         else:
-            await update.message.reply_text(f"❌ Erreur édition, réessaie dans 20s {SIGNATURE}")
+            await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     cap_vision = cap or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
@@ -964,19 +975,19 @@ async def handle_photo(update,context):
             try:
                 comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
                 rep = comp.choices[0].message.content
-                await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
                 print(f"OpenRouter qwen fail {e}")
                 try:
                     comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
                     rep = comp.choices[0].message.content
-                    await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                    await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                     return
                 except Exception as e2:
                     await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
                     return
-        await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision.\n{SIGNATURE}")
+        await update.message.reply_text(f"Ajoute OPENROUTER_KEY sur Render pour activer la vision.\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
 async def mp3_cmd(update,context):
@@ -984,21 +995,21 @@ async def mp3_cmd(update,context):
 async def img_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
-        await update.message.reply_text("🎨 /img + idée Ex: /img Dadju en concert\n✏️ Pour modifier une photo: envoie la photo avec /edit en roi")
+        await update.message.reply_text(" /img + idee Ex: /img Dadju en concert\n Pour modifier une photo: envoie la photo avec /edit en roi")
         return
     prompt = " ".join(context.args)
-    await update.message.reply_text(f"🎨 Génération: {prompt}... 20s")
+    await update.message.reply_text(f"Generation: {prompt}... 20s")
     loop = asyncio.get_event_loop()
     img_path = await loop.run_in_executor(None, gen_image_pollination, prompt)
     if img_path and os.path.exists(img_path):
         with open(img_path,'rb') as f:
-            await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"🖼️ {prompt}\n{SIGNATURE}")
+            await context.bot.send_photo(update.effective_chat.id, photo=f, caption=f"{prompt}\n{SIGNATURE}")
         try: os.remove(img_path)
         except: pass
     else:
-        await update.message.reply_text(f"❌ Erreur génération {SIGNATURE}")
+        await update.message.reply_text(f"Erreur generation {SIGNATURE}")
 async def edit_cmd(update,context):
-    await update.message.reply_text("✏️ Envoie une photo avec la légende /edit + ton idée\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne dorée\n/photo + /edit assise dans un avion")
+    await update.message.reply_text(" Envoie une photo avec la legende /edit + ton idee\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne doree\n/photo + /edit assise dans un avion")
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     txt = update.message.text or ""
@@ -1024,7 +1035,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V25.5 + APP MOBILE + FILE BIN FIX...")
+    print("Building V25.5 APP MOBILE FILE FIX SANS ETOILES...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1050,7 +1061,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.5 + FILE APP GO...")
+    print("V25.5 GO SANS ETOILES...")
     app.run_polling()
 
 if __name__ == "__main__":
