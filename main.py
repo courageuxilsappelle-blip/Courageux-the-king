@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.4 + APP MOBILE ===")
+print("=== V25.4 + APP MOBILE + FILE FIX BIN ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -62,7 +62,97 @@ def api_chat():
                 return jsonify({"reponse":rep})
             except Exception as e:
                 print(f"Vision error {e}")
-        # === FIN AJOUT ===
+
+        # === NOUVEAU AJOUT FILE - BIN FIX + EMOJI FIX - SANS RIEN SUPPRIMER ===
+        file_b64 = data.get('file')
+        file_name = data.get('fileName', 'fichier.bin')
+        has_file = data.get('hasFile')
+        if has_file and file_b64:
+            try:
+                print(f"📄 APP FILE RECU: {file_name} | hasFile={has_file} | len={len(file_b64)}")
+                safe_name = re.sub(r'[^\w\.\-]', '_', file_name)
+                if not safe_name or safe_name.strip('_') == '':
+                    safe_name = f"file_{int(time.time())}.bin"
+                b64_data = file_b64
+                if ',' in b64_data:
+                    b64_data = b64_data.split(',', 1)[1]
+                file_bytes = base64.b64decode(b64_data)
+                tmp_path = os.path.join(tempfile.gettempdir(), f"app_{safe_name}")
+                with open(tmp_path, 'wb') as out:
+                    out.write(file_bytes)
+                print(f"📄 Sauvegardé {tmp_path} {len(file_bytes)} bytes")
+
+                lower_name = file_name.lower()
+                ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
+                
+                if ext in [".plus", ".dark"]:
+                    try:
+                        cfg = decrypt_dark_tunnel_file(tmp_path)
+                        details = _extract_transport_details(cfg)
+                        servers = _extract_v2ray_configs(cfg)
+                        lines = [f"🔐 DARK TUNNEL — {file_name}", f"🖥️ SERVEURS: {len(servers)}"]
+                        for i,s in enumerate(servers,1):
+                            lines.append(f"\n━━ Serveur {i} ━━")
+                            if s.get("address"): lines.append(f"Address: {s.get('address')}")
+                            if s.get("port"): lines.append(f"Port: {s.get('port')}")
+                            if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
+                        lines.append(f"\n🌐 {details}")
+                        lines.append(SIGNATURE)
+                        rep = "\n".join(lines)
+                        try: os.remove(tmp_path)
+                        except: pass
+                        if user_id not in conversations:
+                            conversations[user_id]=[]
+                        conversations[user_id].append({"role":"user","content":f"[FILE] {file_name}"})
+                        conversations[user_id].append({"role":"assistant","content":rep})
+                        return jsonify({"reponse": rep})
+                    except Exception as e:
+                        print(f"dark decrypt app error {e}")
+
+                candidates = EXT_TO_MODULES.get(ext, [])
+                if not candidates:
+                    candidates = list(MATRIX_MODULES.keys())
+                valid_out = []
+                raw = Path(tmp_path).read_bytes()
+                for mod_name in candidates:
+                    mod = MATRIX_MODULES.get(mod_name)
+                    if not mod: continue
+                    try:
+                        func = getattr(mod, "decrypt", None) or getattr(mod, "decode", None) or getattr(mod, "decrypt_file", None)
+                        if not func: continue
+                        try: res = func(str(tmp_path))
+                        except: res = func(raw)
+                        if _is_valid_result(res):
+                            valid_out.append(f"[{mod_name}] {ext} OK =>\n{str(res)[:3500]}")
+                            break
+                    except Exception as e:
+                        print(f"{mod_name} app fail: {e}")
+                        continue
+                
+                try: os.remove(tmp_path)
+                except: pass
+
+                if valid_out:
+                    rep = f"📄 **{file_name} DÉCRYPTÉ (APP):**\n\n" + "\n---\n".join(valid_out)
+                else:
+                    try:
+                        txt = file_bytes.decode('utf-8', errors='ignore')[:3000]
+                        rep = f"📄 **{file_name} ({len(file_bytes)} bytes):**\n\n{txt}\n\n{SIGNATURE}"
+                    except:
+                        rep = f"📄 **{file_name} reçu ({len(file_bytes)} bytes)** mais format non supporté, modules testés: {', '.join(candidates)}\n\n{SIGNATURE}"
+
+                if user_id not in conversations:
+                    conversations[user_id]=[]
+                conversations[user_id].append({"role":"user","content":f"[FILE] {file_name}"})
+                conversations[user_id].append({"role":"assistant","content":rep})
+                return jsonify({"reponse": rep})
+
+            except Exception as e:
+                print(f"File APP error {e}")
+                import traceback; traceback.print_exc()
+                return jsonify({"reponse": f"❌ Erreur lecture {file_name}: {str(e)}"})
+        # === FIN AJOUT FILE ===
+
         if not user_text:
             return jsonify({"reponse":"Envoie un message"})
         if user_id not in conversations:
@@ -73,6 +163,7 @@ def api_chat():
         conversations[user_id].append({"role":"assistant","content":rep})
         return jsonify({"reponse":rep})
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({"reponse":f"Erreur {e}"}),500
 
 @flask_app.route('/app')
@@ -336,7 +427,6 @@ def create_score_image(t):
     p = "/tmp/scores.png"
     img.save(p)
     return p
-
 def enhance_prompt_for_image(p):
     try:
         if groq_client:
@@ -352,7 +442,6 @@ def enhance_prompt_for_image(p):
     except:
         pass
     return f"{p}, photorealistic, ultra detailed, 8k, cinematic lighting"
-
 def gen_image_pollination(prompt):
     import urllib.parse
     enhanced = enhance_prompt_for_image(prompt)
@@ -369,7 +458,6 @@ def gen_image_pollination(prompt):
         except:
             continue
     return None
-
 def upload_to_catbox(path):
     try:
         with open(path,'rb') as f:
@@ -379,7 +467,6 @@ def upload_to_catbox(path):
     except:
         pass
     return path
-
 def gen_edit_image(prompt, image_path):
     import urllib.parse, base64
     try:
@@ -418,15 +505,12 @@ def gen_edit_image(prompt, image_path):
     except Exception as e:
         print(f"gen_edit_image error {e}")
     return None
-
 async def start(update,context):
     save_user(update.effective_user.id)
     await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\n📸 Photo = analyse\n✏️ Photo + /edit prompt = modifie\n🎨 /img prompt = genere photo\n📥 Lien YT/TikTok\n🎯 /exact Team vs Team\n🔥 /today\n🔍 /scan host\n📚 /pdf sujet\n🔐 /vmess /stats\n🛡️ /bl ip"))
-
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
     await update.message.reply_text(f"Total: {get_total_users()}\n{SIGNATURE}")
-
 async def vmess_cmd(update,context):
     save_user(update.effective_user.id)
     s = get_random_vmess(5)
@@ -434,7 +518,6 @@ async def vmess_cmd(update,context):
         await update.message.reply_text("Aucun serveur")
         return
     await update.message.reply_text("VMESS\n\n"+"\n\n".join(s)+f"\n\n{SIGNATURE}")
-
 async def pdf_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -468,7 +551,6 @@ async def pdf_cmd(update,context):
             await update.message.reply_text(contenu[:4000])
     except Exception as e:
         await update.message.reply_text(f"Erreur PDF: {e}")
-
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -488,7 +570,6 @@ async def mtr_cmd(update,context):
         txt += f"{'OK' if r['is_200'] else 'KO'} {ip}: {r['status']}\n"
     txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
-
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -505,7 +586,6 @@ async def scan_cmd(update,context):
         txt += f"{p}: {r['status']}\n"
     txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
-
 async def scan200_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -524,7 +604,6 @@ async def scan200_cmd(update,context):
     txt = f"200 OK: {host} ({ip})\n" + ("\n".join([f"OK {r['port']}: {r['code']}" for r in found]) if found else "Aucun 200 OK")
     txt += f"\n\n{SIGNATURE}"
     await update.message.reply_text(txt)
-
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -548,7 +627,6 @@ async def bl_cmd(update,context):
             txt += f"❌ {bl}\n"
         txt += f"\n{SIGNATURE}"
     await update.message.reply_text(txt)
-
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -560,7 +638,6 @@ async def exact_cmd(update,context):
         await context.bot.send_photo(update.effective_chat.id, photo=open(img,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
     except:
         await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 async def today_cmd(update,context):
     save_user(update.effective_user.id)
     await context.bot.send_chat_action(update.effective_chat.id,"typing")
@@ -578,17 +655,14 @@ async def today_cmd(update,context):
         await context.bot.send_photo(update.effective_chat.id, photo=open(img,'rb'), caption=to_3d(f"{pred}\n\n{SIGNATURE}"))
     except:
         await update.message.reply_text(to_3d(f"{pred}\n\n{SIGNATURE}"))
-
 def _normalize_filename(name):
     try:
         return unicodedata.normalize("NFKC", name or "")
     except Exception:
         return name or ""
-
 DT_KEY_256 = b"$B&E)H@McQfThWmZq4t7w!z%C*F-JaNd"
 DT_KEY_192 = b"F)J@NcRfUjXn2r4u7x!A%D*G"
 DT_IV = bytes.fromhex("232e39185523184a5723586242200e05")
-
 def _b64decode_loose(value):
     if isinstance(value, str):
         value = value.encode("ascii", "ignore")
@@ -596,7 +670,6 @@ def _b64decode_loose(value):
     value = value.replace(b"-", b"+").replace(b"_", b"/")
     value += b"=" * (-len(value) % 4)
     return base64.b64decode(value, validate=False)
-
 def _aes_cfb_decrypt(data, key):
     try:
         from Crypto.Cipher import AES
@@ -617,7 +690,6 @@ def _aes_cfb_decrypt(data, key):
                     os.remove(f)
                 except Exception:
                     pass
-
 def _try_json_string(value):
     if not isinstance(value, str):
         return value
@@ -629,7 +701,6 @@ def _try_json_string(value):
         return _normalize_dark_json(json.loads(fixed))
     except Exception:
         return value
-
 def _normalize_dark_json(value):
     if isinstance(value, dict):
         return {k: _normalize_dark_json(v) for k, v in value.items() if k!= "Password"}
@@ -643,7 +714,6 @@ def _normalize_dark_json(value):
     if isinstance(value, str):
         return _try_json_string(value)
     return value
-
 def _decrypt_encrypted_fields(obj, key):
     if isinstance(obj, dict):
         result = {}
@@ -659,10 +729,8 @@ def _decrypt_encrypted_fields(obj, key):
     if isinstance(obj, list):
         return [_decrypt_encrypted_fields(v, key) for v in obj]
     return obj
-
 def _parse_msgpack(data):
     return msgpack.unpackb(data, raw=False, strict_map_key=False)
-
 def decrypt_dark_tunnel_file(path):
     raw = Path(path).read_bytes()
     txt = raw.decode("utf-8-sig", "ignore").strip()
@@ -687,7 +755,6 @@ def decrypt_dark_tunnel_file(path):
         unpacked_outer["EncryptedLockedConfig"] = _decrypt_encrypted_fields(unpacked_inner, DT_KEY_192)
     outer["encryptedLockedConfig"] = unpacked_outer
     return _normalize_dark_json(outer)
-
 def _flatten_config(obj, result=None):
     if result is None:
         result = {}
@@ -725,7 +792,6 @@ def _flatten_config(obj, result=None):
         for item in obj:
             _flatten_config(item, result)
     return result
-
 def _first_scalar(obj, names):
     wanted = {str(x).lower() for x in names}
     if isinstance(obj, dict):
@@ -741,7 +807,6 @@ def _first_scalar(obj, names):
             if found is not None:
                 return found
     return None
-
 def _extract_v2ray_configs(cfg):
     result = []
     seen = set()
@@ -776,18 +841,14 @@ def _extract_v2ray_configs(cfg):
             seen2.add(key)
             unique.append(x)
     return unique
-
 def _extract_transport_details(cfg):
     out = {"network": _first_scalar(cfg, ["network", "transportNetwork"]),"security": _first_scalar(cfg, ["security"]),"sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),"host": _first_scalar(cfg, ["Host", "host"]),"path": _first_scalar(cfg, ["path", "wsPath"]),"serviceName": _first_scalar(cfg, ["serviceName"]),"flow": _first_scalar(cfg, ["flow"]),"fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),"publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),"shortId": _first_scalar(cfg, ["shortId", "sid"]),"allowInsecure": _first_scalar(cfg, ["allowInsecure"]),"proxyHost": _first_scalar(cfg, ["proxyHost"]),"proxyPort": _first_scalar(cfg, ["proxyPort"]),"httpPort": _first_scalar(cfg, ["httpPort"]),"socks5Port": _first_scalar(cfg, ["socks5Port"]),"allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),}
     return {k: v for k, v in out.items() if v not in (None, "")}
-
 EXT_TO_MODULES = {".plus": ["DARKTUNNEL"],".dark": ["DARKTUNNEL"],".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],".hcc": ["HTTPCUSTOM"],".npvt": ["NPVTUNNEL"],".npvs": ["NPVTUNNEL"],".ehi": ["HTTPINJECTOR"],".ehi2": ["HTTPINJECTOR"],".sks": ["SOCKSHTTP", "SocksIP"],".ssc": ["SSCCUSTOM"],".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],".hat": ["Ha_Tunnel"],".hatu": ["Ha_Tunnel"],".ziv": ["ZIVPN"],".v2box": ["V2BOX"],".ini": ["netmod_decoder", "NETMOD"],".sip": ["SocksIP"],".gbl": ["GBL_CLOUD_243"],".gblc": ["GBL_CLOUD_243"],".243": ["GBL_CLOUD_243"],}
-
 def _is_valid_result(res):
     if res is None: return False
     s = str(res).strip()
     return s and s!= "None" and s!= "[]" and s!= "{}" and len(s) > 4
-
 async def handle_dark_tunnel(update, context):
     save_user(update.effective_user.id)
     doc = update.message.document
@@ -845,7 +906,6 @@ async def handle_dark_tunnel(update, context):
         try:
             if os.path.exists(path): os.remove(path)
         except: pass
-
 async def handle_download(update,context,audio_only=False):
     save_user(update.effective_user.id)
     raw = update.message.text or ""
@@ -869,7 +929,6 @@ async def handle_download(update,context,audio_only=False):
             await update.message.reply_text(to_3d(f"{e}"))
     else:
         await update.message.reply_text(to_3d(f"{t}"))
-
 async def handle_photo(update,context):
     save_user(update.effective_user.id)
     cap = (update.message.caption or "").strip()
@@ -920,10 +979,8 @@ async def handle_photo(update,context):
         await update.message.reply_text(f"❌ Ajoute OPENROUTER_KEY sur Render pour activer la vision.\n{SIGNATURE}")
     except Exception as e:
         await update.message.reply_text(f"Erreur vision: {str(e)[:800]}\n{SIGNATURE}")
-
 async def mp3_cmd(update,context):
     await handle_download(update,context,True)
-
 async def img_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -940,10 +997,8 @@ async def img_cmd(update,context):
         except: pass
     else:
         await update.message.reply_text(f"❌ Erreur génération {SIGNATURE}")
-
 async def edit_cmd(update,context):
     await update.message.reply_text("✏️ Envoie une photo avec la légende /edit + ton idée\nEx: photo + /edit en cyborg\n/photo + /edit en roi avec couronne dorée\n/photo + /edit assise dans un avion")
-
 async def chat_gpt(update,context):
     save_user(update.effective_user.id)
     txt = update.message.text or ""
@@ -968,9 +1023,8 @@ async def chat_gpt(update,context):
         rep = f"Bien recu: {txt}. Tape /start"
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
-
 def main():
-    print("Building V25.5 + APP MOBILE...")
+    print("Building V25.5 + APP MOBILE + FILE BIN FIX...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -996,7 +1050,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.5 GO...")
+    print("V25.5 + FILE APP GO...")
     app.run_polling()
 
 if __name__ == "__main__":
