@@ -1,6 +1,7 @@
 import os, re, requests, threading, datetime, random, base64, socket, time, asyncio, textwrap, json, tempfile, unicodedata, subprocess
 from pathlib import Path
-from flask import Flask
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from groq import Groq
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from PIL import Image, ImageDraw, ImageFont
@@ -12,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.4 DARK TUNNEL DECODER + OPENROUTER + EDIT PHOTO V35 FIX NULL ===")
+print("=== V25.4 + APP MOBILE ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -24,17 +25,42 @@ if OPENROUTER_KEY:
     try:
         from openai import OpenAI
         openrouter_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_KEY)
-        print("OpenRouter client loaded")
-    except Exception as e:
-        print(f"OpenRouter fail: {e}")
+    except:
+        pass
 
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
 
 flask_app = Flask(__name__)
+CORS(flask_app)
+
 @flask_app.route('/')
 def home():
-    return f"Bot {SIGNATURE} V25.5 DARK TUNNEL LIVE"
+    return f"Bot {SIGNATURE} LIVE - <a href='/app'>Appli</a>"
+
+@flask_app.route('/api/chat', methods=['POST','OPTIONS'])
+def api_chat():
+    if request.method == 'OPTIONS':
+        return jsonify({"ok":True})
+    try:
+        data = request.get_json() or {}
+        user_text = data.get('message','').strip()
+        user_id = data.get('user_id','app_user')
+        if not user_text:
+            return jsonify({"reponse":"Envoie un message"})
+        if user_id not in conversations:
+            conversations[user_id]=[]
+        conversations[user_id].append({"role":"user","content":user_text})
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}. Francais."}]+conversations[user_id][-10:],temperature=0.7)
+        rep = comp.choices[0].message.content
+        conversations[user_id].append({"role":"assistant","content":rep})
+        return jsonify({"reponse":rep})
+    except Exception as e:
+        return jsonify({"reponse":f"Erreur {e}"}),500
+
+@flask_app.route('/app')
+def app_page():
+    return """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>App</title><style>body{font-family:Arial;background:#0f172a;color:white;margin:0;display:flex;flex-direction:column;height:100vh}#chat{flex:1;overflow-y:auto;padding:15px}.msg{padding:12px;margin:8px 0;border-radius:18px;max-width:85%}.user{background:#0084ff;margin-left:auto}.ia{background:#1e293b;white-space:pre-wrap}#box{display:flex;padding:12px;background:#1e293b}input{flex:1;padding:14px;border-radius:25px;border:none;background:#334155;color:white}button{padding:14px 22px;border-radius:25px;border:none;background:#0084ff;color:white}</style></head><body><div id="chat"><div class='msg ia'>Salut !</div></div><div id="box"><input id="m" placeholder="Ecris..." onkeypress="if(event.key==='Enter')send()"><button onclick="send()">Envoyer</button></div><script>async function send(){let i=document.getElementById('m'),t=i.value.trim();if(!t)return;let c=document.getElementById('chat');c.innerHTML+=`<div class='msg user'>${t}</div>`;i.value='';let id='l-'+Date.now();c.innerHTML+=`<div class='msg ia' id='${id}'>...</div>`;let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t,user_id:'android'})});let d=await r.json();document.getElementById(id).innerHTML=d.reponse;c.scrollTop=c.scrollHeight;}</script></body></html>"""
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
@@ -294,7 +320,6 @@ def create_score_image(t):
     img.save(p)
     return p
 
-# ===== V35 FIX NULL - REMPLACE V34 =====
 def enhance_prompt_for_image(p):
     try:
         if groq_client:
@@ -315,9 +340,7 @@ def gen_image_pollination(prompt):
     import urllib.parse
     enhanced = enhance_prompt_for_image(prompt)
     safe = urllib.parse.quote(enhanced[:600])
-    urls = [
-        f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=flux&seed={random.randint(0,9999999)}",
-    ]
+    urls = [f"https://image.pollinations.ai/prompt/{safe}?width=1024&height=1024&nologo=true&model=flux&seed={random.randint(0,9999999)}",]
     for url in urls:
         try:
             r = requests.get(url, timeout=90)
@@ -331,7 +354,6 @@ def gen_image_pollination(prompt):
     return None
 
 def upload_to_catbox(path):
-    # Gardé pour compatibilité mais plus utilisé
     try:
         with open(path,'rb') as f:
             r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload": f}, timeout=40)
@@ -339,7 +361,7 @@ def upload_to_catbox(path):
                 return r.text.strip()
     except:
         pass
-    return path  # retourne le chemin local pour V35
+    return path
 
 def gen_edit_image(prompt, image_path):
     import urllib.parse, base64
@@ -349,36 +371,21 @@ def gen_edit_image(prompt, image_path):
         p = p.replace("assis dans un jardin","sitting in beautiful garden")
         p = p.replace("assis dans un avion","sitting in airplane window seat")
         p = p.replace("assis","sitting").replace("avion","airplane").replace("jardin","garden")
-        p = "".join([c for c in p if ord(c) < 128]) # supprime accents
+        p = "".join([c for c in p if ord(c) < 128])
         p = p[:180]
         final_prompt = f"Keep exact same woman, same face, same skin, same white lace dress, {p}, photorealistic, preserve identity"
-
         if not os.path.exists(image_path):
-            print(f"File not found {image_path}")
             return None
-
         with open(image_path, 'rb') as f:
             b64_data = base64.b64encode(f.read()).decode('utf-8')
-
-        payload = {
-            "prompt": final_prompt,
-            "image": f"data:image/jpeg;base64,{b64_data}",
-            "model": "kontext",
-            "width": 768,
-            "height": 1024,
-            "nologo": True
-        }
-        print(f"POST kontext {final_prompt}")
+        payload = {"prompt": final_prompt,"image": f"data:image/jpeg;base64,{b64_data}","model": "kontext","width": 768,"height": 1024,"nologo": True}
         r = requests.post("https://image.pollinations.ai/api/generate", json=payload, timeout=150)
-        print(f"RESP {r.status_code} len {len(r.content)}")
         if r.status_code == 200:
             if len(r.content) > 15000 and b"<html" not in r.content[:200].lower():
-                # Si JSON avec URL
                 try:
                     js = r.json()
                     img_url = js.get("image") or js.get("url") or js.get("imageURL")
                     if img_url:
-                        print(f"Got URL {img_url}")
                         rr = requests.get(img_url, timeout=60)
                         if rr.status_code == 200 and len(rr.content) > 10000:
                             path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
@@ -387,17 +394,13 @@ def gen_edit_image(prompt, image_path):
                             return path
                 except:
                     pass
-                # Sinon binaire direct
                 path = f"/tmp/edit_{random.randint(1000,99999)}.jpg"
                 with open(path,'wb') as f:
                     f.write(r.content)
                 return path
-            else:
-                print(f"Error body {r.text[:500]}")
     except Exception as e:
         print(f"gen_edit_image error {e}")
     return None
-# ===== FIN V35 =====
 
 async def start(update,context):
     save_user(update.effective_user.id)
@@ -587,10 +590,7 @@ def _aes_cfb_decrypt(data, key):
             in_name, out_name = fi.name, fo.name
         try:
             bits = len(key) * 8
-            p = subprocess.run(
-                ["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],
-                capture_output=True, text=True, timeout=15
-            )
+            p = subprocess.run(["openssl", "enc", f"-aes-{bits}-cfb", "-d", "-K", key.hex(), "-iv", DT_IV.hex(), "-in", in_name, "-out", out_name],capture_output=True, text=True, timeout=15)
             if p.returncode!= 0:
                 raise RuntimeError(p.stderr.strip() or "OpenSSL AES-CFB a échoué")
             return Path(out_name).read_bytes()
@@ -761,48 +761,10 @@ def _extract_v2ray_configs(cfg):
     return unique
 
 def _extract_transport_details(cfg):
-    out = {
-        "network": _first_scalar(cfg, ["network", "transportNetwork"]),
-        "security": _first_scalar(cfg, ["security"]),
-        "sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),
-        "host": _first_scalar(cfg, ["Host", "host"]),
-        "path": _first_scalar(cfg, ["path", "wsPath"]),
-        "serviceName": _first_scalar(cfg, ["serviceName"]),
-        "flow": _first_scalar(cfg, ["flow"]),
-        "fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),
-        "publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),
-        "shortId": _first_scalar(cfg, ["shortId", "sid"]),
-        "allowInsecure": _first_scalar(cfg, ["allowInsecure"]),
-        "proxyHost": _first_scalar(cfg, ["proxyHost"]),
-        "proxyPort": _first_scalar(cfg, ["proxyPort"]),
-        "httpPort": _first_scalar(cfg, ["httpPort"]),
-        "socks5Port": _first_scalar(cfg, ["socks5Port"]),
-        "allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),
-    }
+    out = {"network": _first_scalar(cfg, ["network", "transportNetwork"]),"security": _first_scalar(cfg, ["security"]),"sni": _first_scalar(cfg, ["serverName", "serverNameIndication", "sni"]),"host": _first_scalar(cfg, ["Host", "host"]),"path": _first_scalar(cfg, ["path", "wsPath"]),"serviceName": _first_scalar(cfg, ["serviceName"]),"flow": _first_scalar(cfg, ["flow"]),"fingerprint": _first_scalar(cfg, ["fingerprint", "fp"]),"publicKey": _first_scalar(cfg, ["publicKey", "pbk"]),"shortId": _first_scalar(cfg, ["shortId", "sid"]),"allowInsecure": _first_scalar(cfg, ["allowInsecure"]),"proxyHost": _first_scalar(cfg, ["proxyHost"]),"proxyPort": _first_scalar(cfg, ["proxyPort"]),"httpPort": _first_scalar(cfg, ["httpPort"]),"socks5Port": _first_scalar(cfg, ["socks5Port"]),"allowAccessFromLan": _first_scalar(cfg, ["allowAccessFromLan"]),}
     return {k: v for k, v in out.items() if v not in (None, "")}
 
-EXT_TO_MODULES = {
-    ".plus": ["DARKTUNNEL"],
-    ".dark": ["DARKTUNNEL"],
-    ".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],
-    ".hcc": ["HTTPCUSTOM"],
-    ".npvt": ["NPVTUNNEL"],
-    ".npvs": ["NPVTUNNEL"],
-    ".ehi": ["HTTPINJECTOR"],
-    ".ehi2": ["HTTPINJECTOR"],
-    ".sks": ["SOCKSHTTP", "SocksIP"],
-    ".ssc": ["SSCCUSTOM"],
-    ".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],
-    ".hat": ["Ha_Tunnel"],
-    ".hatu": ["Ha_Tunnel"],
-    ".ziv": ["ZIVPN"],
-    ".v2box": ["V2BOX"],
-    ".ini": ["netmod_decoder", "NETMOD"],
-    ".sip": ["SocksIP"],
-    ".gbl": ["GBL_CLOUD_243"],
-    ".gblc": ["GBL_CLOUD_243"],
-    ".243": ["GBL_CLOUD_243"],
-}
+EXT_TO_MODULES = {".plus": ["DARKTUNNEL"],".dark": ["DARKTUNNEL"],".hc": ["HTTPCUSTOM", "HttpCustom", "HC_REBORN"],".hcc": ["HTTPCUSTOM"],".npvt": ["NPVTUNNEL"],".npvs": ["NPVTUNNEL"],".ehi": ["HTTPINJECTOR"],".ehi2": ["HTTPINJECTOR"],".sks": ["SOCKSHTTP", "SocksIP"],".ssc": ["SSCCUSTOM"],".tnl": ["OPENTUNNEL_TNL", "OpenTunnel"],".hat": ["Ha_Tunnel"],".hatu": ["Ha_Tunnel"],".ziv": ["ZIVPN"],".v2box": ["V2BOX"],".ini": ["netmod_decoder", "NETMOD"],".sip": ["SocksIP"],".gbl": ["GBL_CLOUD_243"],".gblc": ["GBL_CLOUD_243"],".243": ["GBL_CLOUD_243"],}
 
 def _is_valid_result(res):
     if res is None: return False
@@ -905,7 +867,6 @@ async def handle_photo(update,context):
             prompt = "sitting in beautiful garden"
         await update.message.reply_text(f"✏️ Modification en cours: {prompt}... 25s\nJe garde ton visage...")
         loop = asyncio.get_event_loop()
-        # V35 FIX: on passe directement fp, pas d'URL
         edited_path = await loop.run_in_executor(None, gen_edit_image, prompt, fp)
         if edited_path and os.path.exists(edited_path):
             with open(edited_path,'rb') as f:
@@ -925,28 +886,14 @@ async def handle_photo(update,context):
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if openrouter_client:
             try:
-                comp = openrouter_client.chat.completions.create(
-                    model="qwen/qwen-2.5-vl-72b-instruct",
-                    messages=[{"role":"user","content":[
-                        {"type":"text","text": cap_vision},
-                        {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
-                    ]}],
-                    max_tokens=600
-                )
+                comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
                 rep = comp.choices[0].message.content
                 await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
-                print(f"OpenRouter qwen fail {e}, try fallback")
+                print(f"OpenRouter qwen fail {e}")
                 try:
-                    comp = openrouter_client.chat.completions.create(
-                        model="google/gemini-2.0-flash-001",
-                        messages=[{"role":"user","content":[
-                            {"type":"text","text": cap_vision},
-                            {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
-                        ]}],
-                        max_tokens=600
-                    )
+                    comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
                     rep = comp.choices[0].message.content
                     await update.message.reply_text(f"📱 ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                     return
@@ -1006,7 +953,7 @@ async def chat_gpt(update,context):
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 
 def main():
-    print("Building V25.5 DARK TUNNEL + OPENROUTER + EDIT V35...")
+    print("Building V25.5 + APP MOBILE...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
