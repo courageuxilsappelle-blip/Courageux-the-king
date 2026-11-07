@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.6 PDF FIX CRG 3D UNICODE ===")
+print("=== V25.7 PDF FIX APP COMPLET + CLEAN ** ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -30,6 +30,15 @@ if OPENROUTER_KEY:
 
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
+
+# === AJOUT 1 : FONCTION QUI ENLEVE LES ** ===
+def clean_text(txt):
+    if not txt:
+        return txt
+    txt = txt.replace("**", "").replace("__", "")
+    txt = re.sub(r'^#+\s*', '', txt, flags=re.MULTILINE)
+    txt = txt.replace("###", "").replace("##", "")
+    return txt.strip()
 
 flask_app = Flask(__name__)
 CORS(flask_app)
@@ -53,7 +62,7 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": user_text or "Analyse cette image, quel est le processeur? Reponds en francais detaille."},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
-                rep = comp.choices[0].message.content
+                rep = clean_text(comp.choices[0].message.content)
                 if user_id not in conversations:
                     conversations[user_id]=[]
                 conversations[user_id].append({"role":"user","content":user_text+" [photo]"})
@@ -100,7 +109,7 @@ def api_chat():
                             if s.get("password"): lines.append(f"Pass: {s.get('password')}")
                         lines.append(f"\nTRANSPORT: {details}")
                         lines.append(f"\n{SIGNATURE}")
-                        rep = "\n".join(lines)
+                        rep = clean_text("\n".join(lines))
                         try: os.remove(tmp_path)
                         except: pass
                         if user_id not in conversations:
@@ -116,7 +125,7 @@ def api_chat():
                             txt_brut = file_bytes.decode('utf-8', errors='ignore')[:2000]
                         except:
                             txt_brut = file_bytes[:500].hex()
-                        rep = f"Erreur decrypt {file_name}: {str(e)[:500]}\n\nContenu brut ({len(file_bytes)} bytes):\n{txt_brut}\n\n{SIGNATURE}"
+                        rep = clean_text(f"Erreur decrypt {file_name}: {str(e)[:500]}\n\nContenu brut ({len(file_bytes)} bytes):\n{txt_brut}\n\n{SIGNATURE}")
                         try: os.remove(tmp_path)
                         except: pass
                         return jsonify({"reponse": rep})
@@ -145,13 +154,13 @@ def api_chat():
                 except: pass
 
                 if valid_out:
-                    rep = f"FICHIER {file_name} DECRYPTE (APP):\n\n" + "\n---\n".join(valid_out)
+                    rep = clean_text(f"FICHIER {file_name} DECRYPTE (APP):\n\n" + "\n---\n".join(valid_out))
                 else:
                     try:
                         txt = file_bytes.decode('utf-8', errors='ignore')[:3000]
-                        rep = f"FICHIER {file_name} ({len(file_bytes)} bytes):\n\n{txt}\n\n{SIGNATURE}"
+                        rep = clean_text(f"FICHIER {file_name} ({len(file_bytes)} bytes):\n\n{txt}\n\n{SIGNATURE}")
                     except:
-                        rep = f"FICHIER {file_name} recu ({len(file_bytes)} bytes) mais format non supporte, modules testes: {', '.join(candidates)}\n\n{SIGNATURE}"
+                        rep = clean_text(f"FICHIER {file_name} recu ({len(file_bytes)} bytes) mais format non supporte, modules testes: {', '.join(candidates)}\n\n{SIGNATURE}")
 
                 if user_id not in conversations:
                     conversations[user_id]=[]
@@ -166,11 +175,38 @@ def api_chat():
 
         if not user_text:
             return jsonify({"reponse":"Envoie un message"})
+
+        low = user_text.lower()
+
+        # === AJOUT 2 : FIX PDF POUR APPLICATION ===
+        if "pdf" in low or "livre" in low or "fichier pdf" in low:
+            sujet = user_text.replace("/pdf","").replace("pdf","").replace("livre","").replace("fichier","").replace("Fait moi un","").replace("Fais moi","").replace("histoire de","").strip()
+            if len(sujet) < 3:
+                sujet = user_text
+            try:
+                prompt_pdf = f"Redige le TEXTE COMPLET detaille en francais sur : {sujet}. 1500 mots minimum, introduction, 5 chapitres, conclusion. Texte simple sans ** ni ##, sans markdown, francais courant."
+                comp_pdf = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content":prompt_pdf}], temperature=0.7, max_tokens=4000)
+                contenu_pdf = clean_text(comp_pdf.choices[0].message.content)
+                pdf_path = create_pdf_book(sujet, contenu_pdf)
+                if pdf_path and os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as f:
+                        pdf_b64 = base64.b64encode(f.read()).decode()
+                    os.remove(pdf_path)
+                    return jsonify({
+                        "reponse": f"Livre PDF pret : {sujet}. Clique sur la fleche pour telecharger.",
+                        "pdf_base64": pdf_b64,
+                        "pdf_name": f"{sujet[:25].replace(' ','_')}.pdf"
+                    })
+                else:
+                    return jsonify({"reponse": contenu_pdf})
+            except Exception as e:
+                print(f"PDF APP error {e}")
+
         if user_id not in conversations:
             conversations[user_id]=[]
         conversations[user_id].append({"role":"user","content":user_text})
-        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}. Francais."}]+conversations[user_id][-10:],temperature=0.7)
-        rep = comp.choices[0].message.content
+        comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":f"Tu es {SIGNATURE}. Francais uniquement, reponds sans ** ni ## ni markdown. Texte simple."}]+conversations[user_id][-10:],temperature=0.7)
+        rep = clean_text(comp.choices[0].message.content)
         conversations[user_id].append({"role":"assistant","content":rep})
         return jsonify({"reponse":rep})
     except Exception as e:
@@ -179,7 +215,7 @@ def api_chat():
 
 @flask_app.route('/app')
 def app_page():
-    return """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>App</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>*{font-family:'Poppins',sans-serif !important}body{font-family:'Poppins',Arial;background:#0f172a;color:white;margin:0;display:flex;flex-direction:column;height:100vh}#chat{flex:1;overflow-y:auto;padding:15px}.msg{padding:12px;margin:8px 0;border-radius:18px;max-width:85%}.user{background:#0084ff;margin-left:auto}.ia{background:#1e293b;white-space:pre-wrap}#box{display:flex;padding:12px;background:#1e293b}input{flex:1;padding:14px;border-radius:25px;border:none;background:#334155;color:white}button{padding:14px 22px;border-radius:25px;border:none;background:#0084ff;color:white}</style></head><body><div id="chat"><div class='msg ia'>Salut !</div></div><div id="box"><input id="m" placeholder="Ecris..." onkeypress="if(event.key==='Enter')send()"><button onclick="send()">Envoyer</button></div><script>async function send(){let i=document.getElementById('m'),t=i.value.trim();if(!t)return;let c=document.getElementById('chat');c.innerHTML+=`<div class='msg user'>${t}</div>`;i.value='';let id='l-'+Date.now();c.innerHTML+=`<div class='msg ia' id='${id}'>...</div>`;let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t,user_id:'android'})});let d=await r.json();document.getElementById(id).innerHTML=d.reponse;c.scrollTop=c.scrollHeight;}</script></body></html>"""
+    return """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>App</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>*{font-family:'Poppins',sans-serif !important}body{font-family:'Poppins',Arial;background:#0f172a;color:white;margin:0;display:flex;flex-direction:column;height:100vh}#chat{flex:1;overflow-y:auto;padding:15px}.msg{padding:12px;margin:8px 0;border-radius:18px;max-width:85%}.user{background:#0084ff;margin-left:auto}.ia{background:#1e293b;white-space:pre-wrap}#box{display:flex;padding:12px;background:#1e293b}input{flex:1;padding:14px;border-radius:25px;border:none;background:#334155;color:white}button{padding:14px 22px;border-radius:25px;border:none;background:#0084ff;color:white}.pdf-box{margin-top:10px;background:#0f172a;border:1px dashed #0084ff;border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:space-between}.pdf-box b{font-size:13px;color:white}.pdf-arrow{background:#0084ff;color:white;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px;font-weight:900}</style></head><body><div id="chat"><div class='msg ia'>Salut Mon Roi ! Tape: /pdf Mobutu pour livre PDF avec fleche telechargement</div></div><div id="box"><input id="m" placeholder="Ecris..." onkeypress="if(event.key==='Enter')send()"><button onclick="send()">Envoyer</button></div><script>async function send(){let i=document.getElementById('m'),t=i.value.trim();if(!t)return;let c=document.getElementById('chat');c.innerHTML+=`<div class='msg user'>${t}</div>`;i.value='';let id='l-'+Date.now();c.innerHTML+=`<div class='msg ia' id='${id}'>...</div>`;c.scrollTop=c.scrollHeight;let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t,user_id:'android'})});let d=await r.json();let el=document.getElementById(id);el.textContent=d.reponse;if(d.pdf_base64){let box=document.createElement('div');box.className='pdf-box';box.innerHTML=`<b>${d.pdf_name||'livre.pdf'}</b><a class='pdf-arrow' href='data:application/pdf;base64,${d.pdf_base64}' download='${d.pdf_name||'livre.pdf'}'>⬇️</a>`;el.appendChild(box);}c.scrollTop=c.scrollHeight;}</script></body></html>"""
 
 threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), use_reloader=False), daemon=True).start()
 time.sleep(1)
@@ -213,7 +249,7 @@ async def owner_cmd(update,context):
     try:
         r=requests.get("https://api.github.com/repos/matrixzat/vpn-decryptor",timeout=10,headers={"User-Agent":"Mozilla/5.0"}).json()
         txt=f"PREUVE OWNER\nRepo: matrixzat/vpn-decryptor\nOwner: {r.get('owner',{}).get('login')}\nStars: {r.get('stargazers_count')}\nURL: {r.get('html_url')}\nDesc: {r.get('description')}\n\nPublic open-source\n{SIGNATURE}"
-        await update.message.reply_text(txt)
+        await update.message.reply_text(clean_text(txt))
     except Exception as e:
         await update.message.reply_text(f"err {e}")
 
@@ -256,13 +292,9 @@ def create_pdf_book(title, content):
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
         
-        # Essaye de charger DejaVu pour les accents francais
         font_regular = None
         font_bold = None
         try:
-            # Chemins Render / Linux
-            for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
-                pass
             pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
             pdf.add_font("DejaVu", "B", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", uni=True)
             font_regular = ("DejaVu", "")
@@ -271,11 +303,9 @@ def create_pdf_book(title, content):
             print(f"DejaVu fail, fallback Helvetica: {e}")
             font_regular = ("Helvetica", "")
             font_bold = ("Helvetica", "B")
-            # Nettoie les caracteres speciaux si pas unicode
             content = content.encode('latin-1', 'ignore').decode('latin-1')
             title = title.encode('latin-1', 'ignore').decode('latin-1')
 
-        # Page de couverture
         pdf.set_font(font_bold[0], font_bold[1], 26)
         pdf.ln(50)
         pdf.multi_cell(0, 14, title[:80], align='C')
@@ -288,7 +318,6 @@ def create_pdf_book(title, content):
         pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')} - Telegram @COURAGEUX2", align='C')
         pdf.ln(30)
         
-        # Contenu
         pdf.add_page()
         paragraphs = content.split('\n')
         pdf.set_text_color(0,0,0)
@@ -439,7 +468,7 @@ def predict_exact_score(match):
     try:
         prompt = "Score exact EA FC 26 en francais pour: " + match
         comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":prompt}],temperature=0.4)
-        return comp.choices[0].message.content
+        return clean_text(comp.choices[0].message.content)
     except:
         return f"{match} => 2-1 (62%)"
 def create_score_image(t):
@@ -477,7 +506,7 @@ def enhance_prompt_for_image(p):
             if "gims" in low or "maitre gims" in low:
                 return "portrait of a tall Black French rapper with dark sunglasses, black cap, beard, black jacket, stage performance, photorealistic 8k"
             comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role":"user","content": f"Rewrite this into a detailed ENGLISH prompt for FLUX image model, photorealistic 8k: '{p}'. Return ONLY English prompt."}], max_tokens=120, temperature=0.7)
-            enh = comp.choices[0].message.content.strip()
+            enh = clean_text(comp.choices[0].message.content.strip())
             if len(enh) > 10:
                 return enh
     except:
@@ -565,7 +594,7 @@ async def pdf_cmd(update,context):
         await update.message.reply_text(" /pdf + sujet Ex: /pdf guide business")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"Generation livre: {sujet}... 20s")
     try:
         prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##. Ecris en francais simple sans caracteres speciaux compliques."
         contenu = None
@@ -575,7 +604,7 @@ async def pdf_cmd(update,context):
                 if not groq_client:
                     continue
                 comp = groq_client.chat.completions.create(model=model_id, messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
-                contenu = comp.choices[0].message.content
+                contenu = clean_text(comp.choices[0].message.content)
                 if contenu and len(contenu) > 300:
                     break
             except Exception as e:
@@ -583,10 +612,9 @@ async def pdf_cmd(update,context):
                 print(f"PDF model {model_id} fail: {e}")
                 continue
         if not contenu:
-            await update.message.reply_text(f"❌ Erreur PDF: {last_err[:500]}\nVerifie GROQ_API_KEY sur Render")
+            await update.message.reply_text(f"Erreur PDF: {last_err[:500]}\nVerifie GROQ_API_KEY sur Render")
             return
         
-        # Generation PDF avec Unicode fix
         loop = asyncio.get_event_loop()
         pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
         
@@ -598,19 +626,19 @@ async def pdf_cmd(update,context):
                     chat_id=update.effective_chat.id, 
                     document=f, 
                     filename=f"{sujet[:25].replace(' ','_')}.pdf", 
-                    caption=f"📖 Livre: {sujet}\n\nPar {SIGNATURE}\nContact: wa.me/243973622250 | t.me/COURAGEUX2"
+                    caption=f"Livre: {sujet}\n\nPar {SIGNATURE}\nContact: wa.me/243973622250 | t.me/COURAGEUX2"
                 )
             try:
                 os.remove(pdf_path)
             except:
                 pass
-            await update.message.reply_text(f"✅ PDF envoyé avec succès ! {file_size//1024} Ko")
+            await update.message.reply_text(f"PDF envoye avec succes ! {file_size//1024} Ko")
         else:
             print("PDF creation failed, fallback text")
-            await update.message.reply_text(contenu[:4000] + f"\n\n(PDF creation echouee, mais voici le texte)\n{SIGNATURE}")
+            await update.message.reply_text(clean_text(contenu[:4000] + f"\n\n(PDF creation echouee, mais voici le texte)\n{SIGNATURE}"))
     except Exception as e:
         import traceback; traceback.print_exc()
-        await update.message.reply_text(f"❌ Erreur PDF: {e}")
+        await update.message.reply_text(f"Erreur PDF: {e}")
 
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
@@ -630,7 +658,7 @@ async def mtr_cmd(update,context):
         r = await loop.run_in_executor(None, check_port_200, ip, ip, 80)
         txt += f"{'OK' if r['is_200'] else 'KO'} {ip}: {r['status']}\n"
     txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
+    await update.message.reply_text(clean_text(txt))
 async def scan_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -646,7 +674,7 @@ async def scan_cmd(update,context):
         r = await loop.run_in_executor(None, check_port_200, host, ip, p)
         txt += f"{p}: {r['status']}\n"
     txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
+    await update.message.reply_text(clean_text(txt))
 async def scan200_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -664,7 +692,7 @@ async def scan200_cmd(update,context):
             found.append(r)
     txt = f"200 OK: {host} ({ip})\n" + ("\n".join([f"OK {r['port']}: {r['code']}" for r in found]) if found else "Aucun 200 OK")
     txt += f"\n\n{SIGNATURE}"
-    await update.message.reply_text(txt)
+    await update.message.reply_text(clean_text(txt))
 async def bl_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -687,7 +715,7 @@ async def bl_cmd(update,context):
         for bl in listed:
             txt += f"{bl}\n"
         txt += f"\n{SIGNATURE}"
-    await update.message.reply_text(txt)
+    await update.message.reply_text(clean_text(txt))
 async def exact_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -708,7 +736,7 @@ async def today_cmd(update,context):
         try:
             liste = "\n".join([f"- {m}" for m in ml])
             comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"user","content":f"Scores EA FC 26 francais:\n{liste}"}],temperature=0.4)
-            pred = comp.choices[0].message.content
+            pred = clean_text(comp.choices[0].message.content)
         except:
             pass
     try:
@@ -935,7 +963,7 @@ async def handle_dark_tunnel(update, context):
                 if s.get("id") or s.get("uuid"): lines.append(f"UUID: {s.get('id') or s.get('uuid')}")
             lines.append(f"\n{details}")
             lines.append(SIGNATURE)
-            await update.message.reply_text("\n".join(lines)[:4000])
+            await update.message.reply_text(clean_text("\n".join(lines)[:4000]))
             return
         candidates = EXT_TO_MODULES.get(ext, [])
         if not candidates:
@@ -957,12 +985,12 @@ async def handle_dark_tunnel(update, context):
                 print(f"{mod_name} fail: {e}")
                 continue
         if valid_out:
-            await update.message.reply_text("\n---\n".join(valid_out)[:4000])
+            await update.message.reply_text(clean_text("\n---\n".join(valid_out)[:4000]))
             return
         missing = ", ".join(candidates)
-        await update.message.reply_text(f"Format {ext} detecte ({original_name}) mais aucun module n'a pu le decoder.\nModules testes: {missing}\n{SIGNATURE}")
+        await update.message.reply_text(clean_text(f"Format {ext} detecte ({original_name}) mais aucun module n'a pu le decoder.\nModules testes: {missing}\n{SIGNATURE}"))
     except Exception as e:
-        await update.message.reply_text(f"Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}")
+        await update.message.reply_text(clean_text(f"Erreur {ext}: {str(e)[:800]}\n{SIGNATURE}"))
     finally:
         try:
             if os.path.exists(path): os.remove(path)
@@ -1024,14 +1052,14 @@ async def handle_photo(update,context):
         if openrouter_client:
             try:
                 comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
-                rep = comp.choices[0].message.content
+                rep = clean_text(comp.choices[0].message.content)
                 await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
                 print(f"OpenRouter qwen fail {e}")
                 try:
                     comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
-                    rep = comp.choices[0].message.content
+                    rep = clean_text(comp.choices[0].message.content)
                     await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                     return
                 except Exception as e2:
@@ -1067,7 +1095,6 @@ async def chat_gpt(update,context):
     if is_link(txt):
         await handle_download(update,context,False)
         return
-    # FIX: ne plus declencher pdf sur mot "pdf" dans une phrase normale, seulement /pdf
     if low.startswith("/pdf") or low.startswith("pdf ") or low.startswith("/livre"):
         if len(txt.split()) > 1:
             context.args = txt.replace("/pdf","").replace("/livre","").replace("livre","").split()
@@ -1078,15 +1105,15 @@ async def chat_gpt(update,context):
         conversations[uid] = []
     conversations[uid].append({"role":"user","content":txt})
     try:
-        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement. Tu peux creer des PDF avec /pdf."
+        sys_prompt = f"Tu es {SIGNATURE}. Francais uniquement, reponds sans ** ni ## ni markdown. Texte simple."
         comp = groq_client.chat.completions.create(model="openai/gpt-oss-20b",messages=[{"role":"system","content":sys_prompt}]+conversations[uid][-10:],temperature=0.7)
-        rep = comp.choices[0].message.content
+        rep = clean_text(comp.choices[0].message.content)
     except:
         rep = f"Bien recu: {txt}. Tape /start"
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V25.6 PDF FIX UNICODE...")
+    print("Building V25.7 PDF FIX COMPLET...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1112,7 +1139,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.6 GO PDF FIX...")
+    print("V25.7 GO PDF FIX COMPLET...")
     app.run_polling()
 
 if __name__ == "__main__":
