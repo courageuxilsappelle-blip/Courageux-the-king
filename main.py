@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.7 PDF FIX APP COMPLET + CLEAN ** ===")
+print("=== V25.8 ANTI-MENSONGE VISION FIX ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -31,7 +31,6 @@ if OPENROUTER_KEY:
 conversations = {}
 SIGNATURE = "COURAGEUX THE KING"
 
-# === AJOUT 1 : FONCTION QUI ENLEVE LES ** ===
 def clean_text(txt):
     if not txt:
         return txt
@@ -61,7 +60,22 @@ def api_chat():
             try:
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
-                comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": user_text or "Analyse cette image, quel est le processeur? Reponds en francais detaille."},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
+                
+                # === FIX ANTI-MENSONGE ===
+                vision_prompt = f"""Tu es un expert hardware mobile ultra precis. Analyse cette image.
+
+CONSIGNE OCR STRICTE:
+1. Lis mot par mot tout le texte visible dans l'image (SAMFW Tool ou autre)
+2. Identifie le modele exact (ex: SM-A107F)
+3. Ne devine JAMAIS. Donne les specs OFFICIELLES du modele:
+- SM-A107F = Galaxy A10s = Mediatek Helio P22 MT6762 (8x Cortex-A53) - JAMAIS Exynos
+- SM-A107M = pareil Helio P22
+- SM-A207F = A20s = Snapdragon 450
+- Si tu vois pas le CPU dans l'image, utilise ta base de donnees officielle, pas d'invention
+
+Question: {user_text or "Quel est le processeur exact de cet appareil? Donne marque, modele, architecture reelle. Reponds en francais detaille."}"""
+                
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
                 rep = clean_text(comp.choices[0].message.content)
                 if user_id not in conversations:
                     conversations[user_id]=[]
@@ -70,6 +84,15 @@ def api_chat():
                 return jsonify({"reponse":rep})
             except Exception as e:
                 print(f"Vision error {e}")
+                # Fallback qwen si gemini fail
+                try:
+                    if not image_b64.startswith("data:"):
+                        image_b64 = f"data:image/jpeg;base64,{image_b64}"
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
+                    rep = clean_text(comp.choices[0].message.content)
+                    return jsonify({"reponse":rep})
+                except Exception as e2:
+                    print(f"Qwen fallback fail {e2}")
 
         file_b64 = data.get('file')
         file_name = data.get('fileName', 'fichier.bin')
@@ -178,7 +201,6 @@ def api_chat():
 
         low = user_text.lower()
 
-        # === AJOUT 2 : FIX PDF POUR APPLICATION ===
         if "pdf" in low or "livre" in low or "fichier pdf" in low:
             sujet = user_text.replace("/pdf","").replace("pdf","").replace("livre","").replace("fichier","").replace("Fait moi un","").replace("Fais moi","").replace("histoire de","").strip()
             if len(sujet) < 3:
@@ -281,17 +303,14 @@ def to_3d(t):
     except:
         return t
 
-# ===== FONCTION PDF CORRIGEE AVEC UNICODE MON ROI =====
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
         content = content.replace('---', '')
         content = re.sub(r'^#+\s*', '', content, flags=re.MULTILINE)
-        
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
-        
         font_regular = None
         font_bold = None
         try:
@@ -305,7 +324,6 @@ def create_pdf_book(title, content):
             font_bold = ("Helvetica", "B")
             content = content.encode('latin-1', 'ignore').decode('latin-1')
             title = title.encode('latin-1', 'ignore').decode('latin-1')
-
         pdf.set_font(font_bold[0], font_bold[1], 26)
         pdf.ln(50)
         pdf.multi_cell(0, 14, title[:80], align='C')
@@ -317,7 +335,6 @@ def create_pdf_book(title, content):
         pdf.set_font(font_regular[0], font_regular[1], 10)
         pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')} - Telegram @COURAGEUX2", align='C')
         pdf.ln(30)
-        
         pdf.add_page()
         paragraphs = content.split('\n')
         pdf.set_text_color(0,0,0)
@@ -337,7 +354,6 @@ def create_pdf_book(title, content):
                 pdf.set_text_color(30,30,30)
                 pdf.multi_cell(0, 6.5, para)
                 pdf.ln(2)
-        
         safe_title = re.sub(r'[^\w\-]', '_', title[:20])
         pdf_path = f"/tmp/{safe_title}.pdf"
         pdf.output(pdf_path)
@@ -614,20 +630,13 @@ async def pdf_cmd(update,context):
         if not contenu:
             await update.message.reply_text(f"Erreur PDF: {last_err[:500]}\nVerifie GROQ_API_KEY sur Render")
             return
-        
         loop = asyncio.get_event_loop()
         pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
-        
         if pdf_path and os.path.exists(pdf_path):
             file_size = os.path.getsize(pdf_path)
             print(f"PDF OK {pdf_path} {file_size} bytes, envoi...")
             with open(pdf_path,'rb') as f:
-                await context.bot.send_document(
-                    chat_id=update.effective_chat.id, 
-                    document=f, 
-                    filename=f"{sujet[:25].replace(' ','_')}.pdf", 
-                    caption=f"Livre: {sujet}\n\nPar {SIGNATURE}\nContact: wa.me/243973622250 | t.me/COURAGEUX2"
-                )
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=f"{sujet[:25].replace(' ','_')}.pdf", caption=f"Livre: {sujet}\n\nPar {SIGNATURE}\nContact: wa.me/243973622250 | t.me/COURAGEUX2")
             try:
                 os.remove(pdf_path)
             except:
@@ -1044,21 +1053,35 @@ async def handle_photo(update,context):
         else:
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
-    cap_vision = cap or "C est quel modele? Donne la marque et modele exact. Reponds en francais."
+    
+    # === FIX VISION TELEGRAM AUSSI ===
+    cap_vision = f"""Tu es un expert hardware mobile ultra precis. Analyse cette image.
+
+CONSIGNE OCR STRICTE:
+1. Lis mot par mot tout le texte visible dans l'image (SAMFW Tool ou autre)
+2. Identifie le modele exact (ex: SM-A107F)
+3. Ne devine JAMAIS. Donne les specs OFFICIELLES du modele:
+- SM-A107F = Galaxy A10s = Mediatek Helio P22 MT6762 (8x Cortex-A53) - JAMAIS Exynos
+- SM-A107M = pareil Helio P22
+- SM-A207F = A20s = Snapdragon 450
+- Si tu vois pas le CPU dans l'image, utilise ta base de donnees officielle, pas d'invention
+
+Question: {cap or "C'est quel processeur exact de cet appareil? Donne marque, modele, architecture reelle. Reponds en francais detaille."}"""
+
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
         with open(fp,"rb") as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if openrouter_client:
             try:
-                comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=800)
                 rep = clean_text(comp.choices[0].message.content)
                 await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
-                print(f"OpenRouter qwen fail {e}")
+                print(f"OpenRouter gemini fail {e}, fallback qwen")
                 try:
-                    comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=600)
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=800)
                     rep = clean_text(comp.choices[0].message.content)
                     await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                     return
@@ -1113,7 +1136,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V25.7 PDF FIX COMPLET...")
+    print("Building V25.8 ANTI-MENSONGE...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1139,7 +1162,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.7 GO PDF FIX COMPLET...")
+    print("V25.8 GO ANTI-MENSONGE...")
     app.run_polling()
 
 if __name__ == "__main__":
