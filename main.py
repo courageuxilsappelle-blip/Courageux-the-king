@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.5 APP MOBILE FILE FIX SANS ETOILES ===")
+print("=== V25.6 PDF FIX CRG 3D UNICODE ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -245,25 +245,51 @@ def to_3d(t):
     except:
         return t
 
+# ===== FONCTION PDF CORRIGEE AVEC UNICODE MON ROI =====
 def create_pdf_book(title, content):
     try:
         content = re.sub(r'\*\*', '', content)
         content = content.replace('---', '')
         content = re.sub(r'^#+\s*', '', content, flags=re.MULTILINE)
+        
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 26)
+        
+        # Essaye de charger DejaVu pour les accents francais
+        font_regular = None
+        font_bold = None
+        try:
+            # Chemins Render / Linux
+            for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+                pass
+            pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+            pdf.add_font("DejaVu", "B", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", uni=True)
+            font_regular = ("DejaVu", "")
+            font_bold = ("DejaVu", "B")
+        except Exception as e:
+            print(f"DejaVu fail, fallback Helvetica: {e}")
+            font_regular = ("Helvetica", "")
+            font_bold = ("Helvetica", "B")
+            # Nettoie les caracteres speciaux si pas unicode
+            content = content.encode('latin-1', 'ignore').decode('latin-1')
+            title = title.encode('latin-1', 'ignore').decode('latin-1')
+
+        # Page de couverture
+        pdf.set_font(font_bold[0], font_bold[1], 26)
         pdf.ln(50)
         pdf.multi_cell(0, 14, title[:80], align='C')
         pdf.ln(10)
-        pdf.set_font("Helvetica", "", 13)
+        pdf.set_font(font_regular[0], font_regular[1], 13)
         pdf.set_text_color(100,100,100)
         pdf.cell(0, 10, f"Par {SIGNATURE}", align='C')
         pdf.ln(15)
-        pdf.set_font("Helvetica", "I", 10)
-        pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')}", align='C')
+        pdf.set_font(font_regular[0], font_regular[1], 10)
+        pdf.cell(0, 10, f"{datetime.datetime.now().strftime('%d/%m/%Y')} - Telegram @COURAGEUX2", align='C')
         pdf.ln(30)
+        
+        # Contenu
+        pdf.add_page()
         paragraphs = content.split('\n')
         pdf.set_text_color(0,0,0)
         for para in paragraphs:
@@ -271,22 +297,26 @@ def create_pdf_book(title, content):
             if not para:
                 pdf.ln(6)
                 continue
-            if len(para) < 100 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction') or para.lower().startswith('conclusion') or para.lower().startswith('partie')):
-                pdf.set_font("Helvetica", "B", 14)
+            if len(para) < 120 and (para.lower().startswith('chapitre') or para.lower().startswith('introduction') or para.lower().startswith('conclusion') or para.lower().startswith('partie')):
+                pdf.set_font(font_bold[0], font_bold[1], 14)
                 pdf.set_text_color(0, 51, 102)
                 pdf.ln(6)
                 pdf.multi_cell(0, 8, para)
                 pdf.ln(3)
             else:
-                pdf.set_font("Helvetica", "", 11)
+                pdf.set_font(font_regular[0], font_regular[1], 11)
                 pdf.set_text_color(30,30,30)
                 pdf.multi_cell(0, 6.5, para)
                 pdf.ln(2)
-        pdf_path = f"/tmp/{title[:15].replace(' ','_')}.pdf"
+        
+        safe_title = re.sub(r'[^\w\-]', '_', title[:20])
+        pdf_path = f"/tmp/{safe_title}.pdf"
         pdf.output(pdf_path)
+        print(f"PDF CREATED: {pdf_path} size {os.path.getsize(pdf_path)}")
         return pdf_path
     except Exception as e:
         print(f"PDF Error {e}")
+        import traceback; traceback.print_exc()
         return None
 
 def clean_url(u): return u.strip().split('?is=')[0].split('&is=')[0].split('?si=')[0]
@@ -535,33 +565,53 @@ async def pdf_cmd(update,context):
         await update.message.reply_text(" /pdf + sujet Ex: /pdf guide business")
         return
     sujet = " ".join(context.args)
-    await update.message.reply_text(f"Generation livre: {sujet}... 20s")
+    await update.message.reply_text(f"📚 Generation livre: {sujet}... 20s")
     try:
-        prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##."
+        prompt = f"Redige le TEXTE COMPLET d'un livre en francais sur : {sujet}. Ne parle jamais de PDF. Structure: Titre {sujet}, Introduction 300 mots, 5 chapitres detailles avec titres clairs, Conclusion avec conseils pratiques. 1500 mots minimum. Texte simple, paragraphes aeres, sans ** ni ##. Ecris en francais simple sans caracteres speciaux compliques."
         contenu = None
         last_err = ""
         for model_id in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3-32b"]:
             try:
+                if not groq_client:
+                    continue
                 comp = groq_client.chat.completions.create(model=model_id, messages=[{"role":"user","content":prompt}], temperature=0.7, max_tokens=4000)
                 contenu = comp.choices[0].message.content
                 if contenu and len(contenu) > 300:
                     break
             except Exception as e:
                 last_err = str(e)
+                print(f"PDF model {model_id} fail: {e}")
                 continue
         if not contenu:
-            await update.message.reply_text(f"Erreur PDF: {last_err[:500]}")
+            await update.message.reply_text(f"❌ Erreur PDF: {last_err[:500]}\nVerifie GROQ_API_KEY sur Render")
             return
+        
+        # Generation PDF avec Unicode fix
         loop = asyncio.get_event_loop()
         pdf_path = await loop.run_in_executor(None, create_pdf_book, sujet, contenu)
+        
         if pdf_path and os.path.exists(pdf_path):
+            file_size = os.path.getsize(pdf_path)
+            print(f"PDF OK {pdf_path} {file_size} bytes, envoi...")
             with open(pdf_path,'rb') as f:
-                await context.bot.send_document(update.effective_chat.id, document=f, filename=f"{sujet[:20]}.pdf", caption=to_3d(f"Livre: {sujet}\n{SIGNATURE}"))
-            os.remove(pdf_path)
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id, 
+                    document=f, 
+                    filename=f"{sujet[:25].replace(' ','_')}.pdf", 
+                    caption=f"📖 Livre: {sujet}\n\nPar {SIGNATURE}\nContact: wa.me/243973622250 | t.me/COURAGEUX2"
+                )
+            try:
+                os.remove(pdf_path)
+            except:
+                pass
+            await update.message.reply_text(f"✅ PDF envoyé avec succès ! {file_size//1024} Ko")
         else:
-            await update.message.reply_text(contenu[:4000])
+            print("PDF creation failed, fallback text")
+            await update.message.reply_text(contenu[:4000] + f"\n\n(PDF creation echouee, mais voici le texte)\n{SIGNATURE}")
     except Exception as e:
-        await update.message.reply_text(f"Erreur PDF: {e}")
+        import traceback; traceback.print_exc()
+        await update.message.reply_text(f"❌ Erreur PDF: {e}")
+
 async def mtr_cmd(update,context):
     save_user(update.effective_user.id)
     if not context.args:
@@ -1017,9 +1067,10 @@ async def chat_gpt(update,context):
     if is_link(txt):
         await handle_download(update,context,False)
         return
-    if "pdf" in low or "livre" in low:
+    # FIX: ne plus declencher pdf sur mot "pdf" dans une phrase normale, seulement /pdf
+    if low.startswith("/pdf") or low.startswith("pdf ") or low.startswith("/livre"):
         if len(txt.split()) > 1:
-            context.args = txt.replace("/pdf","").replace("livre","").split()
+            context.args = txt.replace("/pdf","").replace("/livre","").replace("livre","").split()
             await pdf_cmd(update,context)
             return
     uid = update.effective_user.id
@@ -1035,7 +1086,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V25.5 APP MOBILE FILE FIX SANS ETOILES...")
+    print("Building V25.6 PDF FIX UNICODE...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1061,7 +1112,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.5 GO SANS ETOILES...")
+    print("V25.6 GO PDF FIX...")
     app.run_polling()
 
 if __name__ == "__main__":
