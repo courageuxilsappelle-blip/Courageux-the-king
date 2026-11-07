@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V28.0 GOOGLE LENS + UNIVERSAL CPU ===")
+print("=== V30.0 GOOGLE LENS UNIVERSEL ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -61,20 +61,23 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 
-                # === V28.0 GOOGLE LENS MODE ===
-                vision_prompt = f"""Tu es GOOGLE LENS + GSMArena EXPERT universel.
-Tu as 2 modes comme Google Lens:
+                # === V30.0 GOOGLE LENS UNIVERSEL - TOUS LES TELEPHONES ===
+                vision_prompt = f"""Tu es GOOGLE LENS UNIVERSEL - Tu identifies TOUS les smartphones du monde.
 
-MODE 1 - OCR TEXTE: Si l'image contient du texte (Model: SM-A165F, Infinix/X6516-GL, itel/A6611L, VILLAON) => Transcris TOUT le texte mot pour mot exactement.
+METHODE GOOGLE LENS:
+1. REGARDE les details: couleur du dos, forme et taille du module camera, nombre de lenses, position du flash, logo (ZTE, VILLAON, Infinix, etc), texture, bords
+2. COMPARE avec ta base de TOUS les telephones 2020-2026: Apple, Samsung, Xiaomi, Redmi, POCO, Infinix, TECNO, itel, Realme, Oppo, Vivo, ZTE Blade, Nokia, Huawei, Honor, Motorola, Villaon, M-Horse, etc
+3. REPONDS exactement comme Google Lens Apercu IA:
+   - Si sur a 95%: "Le smartphone presente sur la photo est un [MARQUE MODELE EXACT]"
+   - Si doute entre 2 proches: "Le smartphone presente sur la photo semble etre un [MODELE 1] (ou un modele tres proche comme le [MODELE 2])"
+4. DONNE ensuite:
+   - ECRITS EXACTS visibles mot pour mot
+   - MODELE EXACT commercial complet
+   - PROCESSEUR officiel universel (Chipset + CPU + GPU)
 
-MODE 2 - LENS VISUEL: Si l'image montre un telephone physiquement (ex: smartphone noir avec grand module photo circulaire a l'arriere + inscription VILLAON comme Villaon V45) => Identifie visuellement: "L'image montre un smartphone Villaon V45 de couleur noire, reconnaissable a son grand module photo circulaire a l'arriere et a l'inscription VILLAON" comme Google Lens fait.
+Tu n'es PAS limite a Villaon ou ZTE. Tu dois identifier N'IMPORTE QUEL telephone.
 
-DANS LES 2 MODES, tu DOIS ensuite donner:
-1. ECRITS EXACTS: Transcription mot pour mot de tout ce qui est ecrit visible
-2. MODELE EXACT: Marque + nom commercial complet + numero modele (Ex: X6516 = Infinix Smart 7 HD, Villaon V45, SM-A165F = Galaxy A16 4G)
-3. PROCESSEUR OFFICIEL UNIVERSEL: Tu connais TOUS les telephones jusqu'en 2026. Donne obligatoirement Chipset + Gravure + CPU detaille + GPU
-
-Question: {user_text or "Fais comme Google Lens: 1. Donne les ecrits exacts visibles mot pour mot, 2. Identifie le modele visuellement comme Google Lens, 3. Donne processeur officiel complet. Francais tres detaille."}"""
+Question: {user_text or "Fais comme Google Lens: 1. Donne les ecrits exacts visibles mot pour mot, 2. Analyse visuelle detaillee puis donne modele exact ou 'semble etre X ou tres proche Y' si doute, 3. Donne processeur officiel complet. Francais tres detaille."}"""
                 
                 comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1200)
                 rep = clean_text(comp.choices[0].message.content)
@@ -1044,13 +1047,20 @@ async def handle_photo(update,context):
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     
-    # === GOOGLE LENS TELEGRAM MODE ===
-    cap_vision = f"""Tu es GOOGLE LENS + GSMArena EXPERT universel.
-MODE 1 - OCR: Si texte visible (Model: SM-A165F, X6516) => Transcris mot pour mot.
-MODE 2 - LENS VISUEL: Si photo telephone physique (Villaon V45 noir avec grand module circulaire + inscription VILLAON) => "L'image montre un smartphone Villaon V45 de couleur noire, reconnaissable a son grand module photo circulaire a l'arriere et a l'inscription VILLAON" comme Google Lens.
+    # === V30.0 GOOGLE LENS UNIVERSEL - TOUS LES TELEPHONES ===
+    cap_vision = f"""Tu es GOOGLE LENS UNIVERSEL - Tu identifies TOUS les smartphones.
 
-Donne ensuite: ecrits exacts + modele exact + processeur officiel complet (chipset, CPU, GPU, gravure). Tu connais TOUS les telephones jusqu'en 2026.
-Question: {cap or "Fais comme Google Lens: donne ecrits exacts, modele visuel et processeur officiel complet. Francais tres detaille."}"""
+METHODE GOOGLE LENS:
+1. REGARDE: couleur dos, forme module camera, nombre lenses, logo, bords
+2. COMPARE avec TOUS les telephones 2020-2026: Apple, Samsung, Xiaomi, Redmi, POCO, Infinix, TECNO, itel, Realme, Oppo, Vivo, ZTE Blade, Nokia, Huawei, Honor, Motorola, Villaon, etc
+3. REPONDS comme Google Lens:
+   - Si sur: "Le smartphone presente est un [MARQUE MODELE EXACT]"
+   - Si doute: "Le smartphone presente semble etre un [MODELE 1] (ou un modele tres proche comme le [MODELE 2])"
+4. DONNE: ecrits exacts + modele exact + processeur officiel complet
+
+Tu n'es PAS limite a Villaon ou ZTE.
+
+Question: {cap or "Fais comme Google Lens: analyse visuelle detaillee puis donne modele exact ou 'semble etre X ou tres proche Y' si doute, plus processeur officiel. Francais tres detaille."}"""
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -1060,14 +1070,14 @@ Question: {cap or "Fais comme Google Lens: donne ecrits exacts, modele visuel et
             try:
                 comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1200)
                 rep = clean_text(comp.choices[0].message.content)
-                await update.message.reply_text(f"ANALYSE GOOGLE LENS:\n\n{rep}\n\n{SIGNATURE}")
+                await update.message.reply_text(f"ANALYSE GOOGLE LENS UNIVERSEL:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
                 print(f"OpenRouter gemini fail {e}, fallback qwen")
                 try:
                     comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1200)
                     rep = clean_text(comp.choices[0].message.content)
-                    await update.message.reply_text(f"ANALYSE GOOGLE LENS:\n\n{rep}\n\n{SIGNATURE}")
+                    await update.message.reply_text(f"ANALYSE GOOGLE LENS UNIVERSEL:\n\n{rep}\n\n{SIGNATURE}")
                     return
                 except Exception as e2:
                     await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
@@ -1120,7 +1130,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V28.0 GOOGLE LENS...")
+    print("Building V30.0 GOOGLE LENS UNIVERSEL...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1146,7 +1156,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V28.0 GO GOOGLE LENS...")
+    print("V30.0 GO GOOGLE LENS UNIVERSEL...")
     app.run_polling()
 
 if __name__ == "__main__":
