@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V27.0 UNIVERSAL CPU FIX ===")
+print("=== V28.0 GOOGLE LENS + UNIVERSAL CPU ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -61,15 +61,22 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 
-                vision_prompt = f"""Tu es le meilleur expert hardware mobile au monde, avec acces a la base GSMArena / PhoneDB officielle jusqu'en 2026.
-MISSION EN 3 ETAPES OBLIGATOIRES:
-ETAPE 1 - TRANSCRIPTION OCR PARFAITE: Transcris TOUT le texte visible mot pour mot, sans ajouter ni enlever. Ex: "Infinix/X6516-GL/Infinix-X6516" => ecris exactement ca.
-ETAPE 2 - IDENTIFICATION MODELE EXACT: Ne JAMAIS ajouter "SM-" si pas ecrit. Donne nom commercial complet: marque + nom commercial + numero modele. Ex: X6516 = Infinix Smart 7 HD (X6516), SM-A165F = Samsung Galaxy A16 4G.
-ETAPE 3 - PROCESSEUR OFFICIEL UNIVERSEL (POUR N'IMPORTE QUEL TELEPHONE): Tu connais TOUS les telephones jusqu'en 2026. Donne obligatoirement: Chipset exact + Gravure + CPU detaille + GPU.
-REGLE: Si modele connu, donne CPU officiel. Si inconnu, dis "Modele detecte mais CPU non trouve, verification GSMArena recommandee" mais essaie d'abord avec ta base interne.
-Question: {user_text or "Donne transcription exacte, puis modele commercial exact, puis processeur officiel complet avec chipset, CPU, GPU et finesse. Francais tres detaille."}"""
+                # === V28.0 GOOGLE LENS MODE ===
+                vision_prompt = f"""Tu es GOOGLE LENS + GSMArena EXPERT universel.
+Tu as 2 modes comme Google Lens:
+
+MODE 1 - OCR TEXTE: Si l'image contient du texte (Model: SM-A165F, Infinix/X6516-GL, itel/A6611L, VILLAON) => Transcris TOUT le texte mot pour mot exactement.
+
+MODE 2 - LENS VISUEL: Si l'image montre un telephone physiquement (ex: smartphone noir avec grand module photo circulaire a l'arriere + inscription VILLAON comme Villaon V45) => Identifie visuellement: "L'image montre un smartphone Villaon V45 de couleur noire, reconnaissable a son grand module photo circulaire a l'arriere et a l'inscription VILLAON" comme Google Lens fait.
+
+DANS LES 2 MODES, tu DOIS ensuite donner:
+1. ECRITS EXACTS: Transcription mot pour mot de tout ce qui est ecrit visible
+2. MODELE EXACT: Marque + nom commercial complet + numero modele (Ex: X6516 = Infinix Smart 7 HD, Villaon V45, SM-A165F = Galaxy A16 4G)
+3. PROCESSEUR OFFICIEL UNIVERSEL: Tu connais TOUS les telephones jusqu'en 2026. Donne obligatoirement Chipset + Gravure + CPU detaille + GPU
+
+Question: {user_text or "Fais comme Google Lens: 1. Donne les ecrits exacts visibles mot pour mot, 2. Identifie le modele visuellement comme Google Lens, 3. Donne processeur officiel complet. Francais tres detaille."}"""
                 
-                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1000)
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1200)
                 rep = clean_text(comp.choices[0].message.content)
                 if user_id not in conversations:
                     conversations[user_id]=[]
@@ -81,7 +88,7 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                 try:
                     if not image_b64.startswith("data:"):
                         image_b64 = f"data:image/jpeg;base64,{image_b64}"
-                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1000)
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1200)
                     rep = clean_text(comp.choices[0].message.content)
                     return jsonify({"reponse":rep})
                 except Exception as e2:
@@ -104,10 +111,8 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                 with open(tmp_path, 'wb') as out:
                     out.write(file_bytes)
                 print(f"Sauve {tmp_path} {len(file_bytes)} bytes")
-
                 lower_name = file_name.lower()
                 ext = "." + lower_name.split(".")[-1] if "." in lower_name else ""
-                
                 if ext in [".plus", ".dark"]:
                     try:
                         if not os.path.exists(tmp_path):
@@ -145,7 +150,6 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                         try: os.remove(tmp_path)
                         except: pass
                         return jsonify({"reponse": rep})
-
                 candidates = EXT_TO_MODULES.get(ext, [])
                 if not candidates:
                     candidates = list(MATRIX_MODULES.keys())
@@ -165,10 +169,8 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                     except Exception as e:
                         print(f"{mod_name} app fail: {e}")
                         continue
-                
                 try: os.remove(tmp_path)
                 except: pass
-
                 if valid_out:
                     rep = clean_text(f"FICHIER {file_name} DECRYPTE (APP):\n\n" + "\n---\n".join(valid_out))
                 else:
@@ -177,13 +179,11 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                         rep = clean_text(f"FICHIER {file_name} ({len(file_bytes)} bytes):\n\n{txt}\n\n{SIGNATURE}")
                     except:
                         rep = clean_text(f"FICHIER {file_name} recu ({len(file_bytes)} bytes) mais format non supporte, modules testes: {', '.join(candidates)}\n\n{SIGNATURE}")
-
                 if user_id not in conversations:
                     conversations[user_id]=[]
                 conversations[user_id].append({"role":"user","content":f"[FILE] {file_name}"})
                 conversations[user_id].append({"role":"assistant","content":rep})
                 return jsonify({"reponse": rep})
-
             except Exception as e:
                 print(f"File APP error {e}")
                 import traceback; traceback.print_exc()
@@ -191,9 +191,7 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
 
         if not user_text:
             return jsonify({"reponse":"Envoie un message"})
-
         low = user_text.lower()
-
         if "pdf" in low or "livre" in low or "fichier pdf" in low:
             sujet = user_text.replace("/pdf","").replace("pdf","").replace("livre","").replace("fichier","").replace("Fait moi un","").replace("Fais moi","").replace("histoire de","").strip()
             if len(sujet) < 3:
@@ -216,7 +214,6 @@ Question: {user_text or "Donne transcription exacte, puis modele commercial exac
                     return jsonify({"reponse": contenu_pdf})
             except Exception as e:
                 print(f"PDF APP error {e}")
-
         if user_id not in conversations:
             conversations[user_id]=[]
         conversations[user_id].append({"role":"user","content":user_text})
@@ -586,7 +583,7 @@ def gen_edit_image(prompt, image_path):
     return None
 async def start(update,context):
     save_user(update.effective_user.id)
-    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\nPhoto = analyse\nPhoto + /edit prompt = modifie\n/img prompt = genere photo\nLien YT/TikTok\n/exact Team vs Team\n/today\n/scan host\n/pdf sujet\n/vmess /stats\n/bl ip"))
+    await update.message.reply_text(to_3d(f"Je suis {SIGNATURE}\nPhoto = analyse Google Lens + CPU\nPhoto + /edit prompt = modifie\n/img prompt = genere photo\nLien YT/TikTok\n/exact Team vs Team\n/today\n/scan host\n/pdf sujet\n/vmess /stats\n/bl ip"))
 async def stats_cmd(update,context):
     save_user(update.effective_user.id)
     await update.message.reply_text(f"Total: {get_total_users()}\n{SIGNATURE}")
@@ -1047,11 +1044,13 @@ async def handle_photo(update,context):
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     
-    cap_vision = f"""Tu es le meilleur expert hardware mobile au monde, base GSMArena officielle jusqu'en 2026.
-ETAPE 1 - TRANSCRIPTION MOT POUR MOT: Transcris tout le texte visible exactement.
-ETAPE 2 - MODELE EXACT: Donne marque + nom commercial + numero modele. Ex: X6516 = Infinix Smart 7 HD
-ETAPE 3 - PROCESSEUR OFFICIEL UNIVERSEL: Donne obligatoirement chipset + gravure + CPU + GPU pour N'IMPORTE QUEL telephone.
-Question: {cap or "Donne transcription exacte, modele exact et processeur officiel complet. Francais tres detaille."}"""
+    # === GOOGLE LENS TELEGRAM MODE ===
+    cap_vision = f"""Tu es GOOGLE LENS + GSMArena EXPERT universel.
+MODE 1 - OCR: Si texte visible (Model: SM-A165F, X6516) => Transcris mot pour mot.
+MODE 2 - LENS VISUEL: Si photo telephone physique (Villaon V45 noir avec grand module circulaire + inscription VILLAON) => "L'image montre un smartphone Villaon V45 de couleur noire, reconnaissable a son grand module photo circulaire a l'arriere et a l'inscription VILLAON" comme Google Lens.
+
+Donne ensuite: ecrits exacts + modele exact + processeur officiel complet (chipset, CPU, GPU, gravure). Tu connais TOUS les telephones jusqu'en 2026.
+Question: {cap or "Fais comme Google Lens: donne ecrits exacts, modele visuel et processeur officiel complet. Francais tres detaille."}"""
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -1059,16 +1058,16 @@ Question: {cap or "Donne transcription exacte, modele exact et processeur offici
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if openrouter_client:
             try:
-                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1000)
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1200)
                 rep = clean_text(comp.choices[0].message.content)
-                await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                await update.message.reply_text(f"ANALYSE GOOGLE LENS:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
                 print(f"OpenRouter gemini fail {e}, fallback qwen")
                 try:
-                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1000)
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1200)
                     rep = clean_text(comp.choices[0].message.content)
-                    await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
+                    await update.message.reply_text(f"ANALYSE GOOGLE LENS:\n\n{rep}\n\n{SIGNATURE}")
                     return
                 except Exception as e2:
                     await update.message.reply_text(f"Erreur OpenRouter: {str(e)[:300]} {str(e2)[:300]}\n{SIGNATURE}")
@@ -1121,7 +1120,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V27.0 UNIVERSAL CPU...")
+    print("Building V28.0 GOOGLE LENS...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1147,7 +1146,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V27.0 GO UNIVERSAL CPU...")
+    print("V28.0 GO GOOGLE LENS...")
     app.run_polling()
 
 if __name__ == "__main__":
