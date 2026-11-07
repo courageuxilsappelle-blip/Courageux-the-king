@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V25.8 ANTI-MENSONGE VISION FIX ===")
+print("=== V25.9 ANTI-MENSONGE VISION FIX ITEL COMPLET ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -61,19 +61,25 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 
-                # === FIX ANTI-MENSONGE ===
-                vision_prompt = f"""Tu es un expert hardware mobile ultra precis. Analyse cette image.
+                # === V25.9 FIX ANTI-MENSONGE - CORRIGE ===
+                vision_prompt = f"""Tu es un lecteur OCR EXACT, interdiction totale d'inventer.
 
-CONSIGNE OCR STRICTE:
-1. Lis mot par mot tout le texte visible dans l'image (SAMFW Tool ou autre)
-2. Identifie le modele exact (ex: SM-A107F)
-3. Ne devine JAMAIS. Donne les specs OFFICIELLES du modele:
-- SM-A107F = Galaxy A10s = Mediatek Helio P22 MT6762 (8x Cortex-A53) - JAMAIS Exynos
-- SM-A107M = pareil Helio P22
+ETAPE 1 - TRANSCRIPTION MOT POUR MOT OBLIGATOIRE:
+Transcris TOUT le texte visible exactement comme ecrit, caractere par caractere. Si c'est ecrit "itel/A6611L-OP32/itel-A6611L" tu DOIS ecrire "itel/A6611L-OP32/itel-A6611L". INTERDIT d'ecrire "SM-A6611L" ou "Samsung Galaxy A60".
+
+ETAPE 2 - IDENTIFICATION MARQUE STRICTE:
+- Si texte contient "itel" => MARQUE = ITEL, modele = A6611L, PAS Samsung. Ne JAMAIS ajouter prefixe SM-.
+- Si texte contient "SM-A107F" => MARQUE = Samsung Galaxy A10s
+- Si texte contient "TECNO" => MARQUE = TECNO
+- Ne JAMAIS ajouter "SM-" si ce n'est pas ecrit "SM-" dans l'image.
+
+ETAPE 3 - SPECS OFFICIELLES SEULEMENT SI MODELE CERTAIN:
+- SM-A107F / SM-A107M = Galaxy A10s = Mediatek Helio P22 MT6762 (8x Cortex-A53) - JAMAIS Exynos
 - SM-A207F = A20s = Snapdragon 450
-- Si tu vois pas le CPU dans l'image, utilise ta base de donnees officielle, pas d'invention
+- itel A6611L = itel, CPU Unisoc (ne pas dire Samsung)
+- Si CPU non visible, dis "CPU non visible sur l'image" - N'INVENTE PAS.
 
-Question: {user_text or "Quel est le processeur exact de cet appareil? Donne marque, modele, architecture reelle. Reponds en francais detaille."}"""
+Question: {user_text or "Transcris d'abord exactement tout le texte mot pour mot, puis donne la marque et le modele exact sans inventer. Reponds en francais detaille."}"""
                 
                 comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=800)
                 rep = clean_text(comp.choices[0].message.content)
@@ -84,7 +90,6 @@ Question: {user_text or "Quel est le processeur exact de cet appareil? Donne mar
                 return jsonify({"reponse":rep})
             except Exception as e:
                 print(f"Vision error {e}")
-                # Fallback qwen si gemini fail
                 try:
                     if not image_b64.startswith("data:"):
                         image_b64 = f"data:image/jpeg;base64,{image_b64}"
@@ -1054,19 +1059,12 @@ async def handle_photo(update,context):
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     
-    # === FIX VISION TELEGRAM AUSSI ===
-    cap_vision = f"""Tu es un expert hardware mobile ultra precis. Analyse cette image.
-
-CONSIGNE OCR STRICTE:
-1. Lis mot par mot tout le texte visible dans l'image (SAMFW Tool ou autre)
-2. Identifie le modele exact (ex: SM-A107F)
-3. Ne devine JAMAIS. Donne les specs OFFICIELLES du modele:
-- SM-A107F = Galaxy A10s = Mediatek Helio P22 MT6762 (8x Cortex-A53) - JAMAIS Exynos
-- SM-A107M = pareil Helio P22
-- SM-A207F = A20s = Snapdragon 450
-- Si tu vois pas le CPU dans l'image, utilise ta base de donnees officielle, pas d'invention
-
-Question: {cap or "C'est quel processeur exact de cet appareil? Donne marque, modele, architecture reelle. Reponds en francais detaille."}"""
+    # === V25.9 FIX TELEGRAM - CORRIGE ===
+    cap_vision = f"""Tu es un lecteur OCR EXACT, interdiction totale d'inventer.
+ETAPE 1 - TRANSCRIPTION MOT POUR MOT: Si c'est ecrit "itel/A6611L" tu DOIS ecrire "itel/A6611L". INTERDIT d'ecrire "SM-A6611L" ou "Samsung Galaxy A60".
+ETAPE 2 - MARQUE: Si texte contient "itel" => ITEL A6611L, PAS Samsung. Si contient "SM-" => Samsung. Ne JAMAIS ajouter SM- si pas ecrit.
+ETAPE 3 - SPECS: SM-A107F/M = Helio P22 MT6762, itel A6611L = itel. N'invente pas.
+Question: {cap or "Transcris exactement tout le texte de l'image mot pour mot, puis donne marque et modele exacts sans inventer. Reponds en francais detaille."}"""
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -1136,7 +1134,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V25.8 ANTI-MENSONGE...")
+    print("Building V25.9 ANTI-MENSONGE ITEL FIX...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1162,7 +1160,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V25.8 GO ANTI-MENSONGE...")
+    print("V25.9 GO ANTI-MENSONGE ITEL FIX...")
     app.run_polling()
 
 if __name__ == "__main__":
