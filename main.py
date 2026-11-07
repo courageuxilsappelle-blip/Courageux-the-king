@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V26.0 CPU OFFICIEL FIX COMPLET ===")
+print("=== V27.0 UNIVERSAL CPU FIX ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -61,18 +61,15 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 
-                vision_prompt = f"""Tu es OCR EXACT + base CPU officielle. Interdiction d'inventer la marque mais OBLIGATION de donner le CPU.
-ETAPE 1 - TRANSCRIPTION MOT POUR MOT: Transcris tout le texte visible exactement comme ecrit. Ex: "Model : SM-A165F"
-ETAPE 2 - MODELE EXACT: itel/A6611L => ITEL A6611L, SM-A165F => Samsung Galaxy A16 4G, SM-A107F => Galaxy A10s. Ne JAMAIS ajouter SM- si pas ecrit.
-ETAPE 3 - PROCESSEUR OFFICIEL OBLIGATOIRE (tu DOIS donner):
-- SM-A165F / SM-A165M = Galaxy A16 4G = Mediatek Helio G99 MT6789 (6 nm) Octa-core 2x2.2 GHz Cortex-A76 & 6x2.0 GHz Cortex-A55 GPU Mali-G57 MC2
-- SM-A107F / SM-A107M = Galaxy A10s = Mediatek Helio P22 MT6762 Octa-core 8x Cortex-A53
-- SM-A207F = Galaxy A20s = Snapdragon 450
-- itel A6611L = Unisoc SC9863A Octa-core
-- SM-A166 = Galaxy A16 5G = Exynos 1330 / Dimensity 6300
-Question: {user_text or "Donne transcription exacte, modele exact, puis processeur officiel detaille avec architecture. Reponds en francais detaille."}"""
+                vision_prompt = f"""Tu es le meilleur expert hardware mobile au monde, avec acces a la base GSMArena / PhoneDB officielle jusqu'en 2026.
+MISSION EN 3 ETAPES OBLIGATOIRES:
+ETAPE 1 - TRANSCRIPTION OCR PARFAITE: Transcris TOUT le texte visible mot pour mot, sans ajouter ni enlever. Ex: "Infinix/X6516-GL/Infinix-X6516" => ecris exactement ca.
+ETAPE 2 - IDENTIFICATION MODELE EXACT: Ne JAMAIS ajouter "SM-" si pas ecrit. Donne nom commercial complet: marque + nom commercial + numero modele. Ex: X6516 = Infinix Smart 7 HD (X6516), SM-A165F = Samsung Galaxy A16 4G.
+ETAPE 3 - PROCESSEUR OFFICIEL UNIVERSEL (POUR N'IMPORTE QUEL TELEPHONE): Tu connais TOUS les telephones jusqu'en 2026. Donne obligatoirement: Chipset exact + Gravure + CPU detaille + GPU.
+REGLE: Si modele connu, donne CPU officiel. Si inconnu, dis "Modele detecte mais CPU non trouve, verification GSMArena recommandee" mais essaie d'abord avec ta base interne.
+Question: {user_text or "Donne transcription exacte, puis modele commercial exact, puis processeur officiel complet avec chipset, CPU, GPU et finesse. Francais tres detaille."}"""
                 
-                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=900)
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1000)
                 rep = clean_text(comp.choices[0].message.content)
                 if user_id not in conversations:
                     conversations[user_id]=[]
@@ -84,7 +81,7 @@ Question: {user_text or "Donne transcription exacte, modele exact, puis processe
                 try:
                     if not image_b64.startswith("data:"):
                         image_b64 = f"data:image/jpeg;base64,{image_b64}"
-                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=900)
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1000)
                     rep = clean_text(comp.choices[0].message.content)
                     return jsonify({"reponse":rep})
                 except Exception as e2:
@@ -1050,14 +1047,11 @@ async def handle_photo(update,context):
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     
-    cap_vision = f"""Tu es OCR EXACT + base CPU officielle. Interdiction d'inventer la marque mais OBLIGATION de donner le CPU.
+    cap_vision = f"""Tu es le meilleur expert hardware mobile au monde, base GSMArena officielle jusqu'en 2026.
 ETAPE 1 - TRANSCRIPTION MOT POUR MOT: Transcris tout le texte visible exactement.
-ETAPE 2 - MODELE EXACT: itel/A6611L => ITEL A6611L, SM-A165F => Samsung Galaxy A16 4G
-ETAPE 3 - PROCESSEUR OFFICIEL OBLIGATOIRE (tu DOIS donner):
-- SM-A165F = Mediatek Helio G99 MT6789 (6 nm) Octa-core 2x2.2 GHz A76 & 6x2.0 GHz A55 GPU Mali-G57 MC2
-- SM-A107F = Helio P22 MT6762
-- itel A6611L = Unisoc SC9863A
-Question: {cap or "Donne transcription exacte, modele exact et processeur officiel detaille. Reponds en francais detaille."}"""
+ETAPE 2 - MODELE EXACT: Donne marque + nom commercial + numero modele. Ex: X6516 = Infinix Smart 7 HD
+ETAPE 3 - PROCESSEUR OFFICIEL UNIVERSEL: Donne obligatoirement chipset + gravure + CPU + GPU pour N'IMPORTE QUEL telephone.
+Question: {cap or "Donne transcription exacte, modele exact et processeur officiel complet. Francais tres detaille."}"""
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -1065,14 +1059,14 @@ Question: {cap or "Donne transcription exacte, modele exact et processeur offici
             b64 = base64.b64encode(f.read()).decode('utf-8')
         if openrouter_client:
             try:
-                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=900)
+                comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1000)
                 rep = clean_text(comp.choices[0].message.content)
                 await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                 return
             except Exception as e:
                 print(f"OpenRouter gemini fail {e}, fallback qwen")
                 try:
-                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=900)
+                    comp = openrouter_client.chat.completions.create(model="qwen/qwen-2.5-vl-72b-instruct",messages=[{"role":"user","content":[{"type":"text","text": cap_vision},{"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}]}],max_tokens=1000)
                     rep = clean_text(comp.choices[0].message.content)
                     await update.message.reply_text(f"ANALYSE:\n\n{rep}\n\n{SIGNATURE}")
                     return
@@ -1127,7 +1121,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V26.0 CPU FIX COMPLET...")
+    print("Building V27.0 UNIVERSAL CPU...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1153,7 +1147,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V26.0 GO CPU FIX COMPLET...")
+    print("V27.0 GO UNIVERSAL CPU...")
     app.run_polling()
 
 if __name__ == "__main__":
