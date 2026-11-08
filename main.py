@@ -13,7 +13,7 @@ urllib3.disable_warnings()
 TOKEN = os.getenv("TOKEN")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
-print("=== V31.1 GOOGLE LENS ANTI-MENSONGE OCR ===")
+print("=== V30.0 GOOGLE LENS UNIVERSEL ===")
 
 try:
     groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
@@ -61,29 +61,23 @@ def api_chat():
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/jpeg;base64,{image_b64}"
                 
-                # === V31.1 ANTI-MENSONGE OCR - FIX DEFINITIF ===
-                vision_prompt = f"""Tu es GOOGLE LENS UNIVERSEL - REGLE ANTI-MENSONGE ABSOLUE.
+                # === V30.0 GOOGLE LENS UNIVERSEL - TOUS LES TELEPHONES ===
+                vision_prompt = f"""Tu es GOOGLE LENS UNIVERSEL - Tu identifies TOUS les smartphones du monde.
 
-ETAPE 1 - LIS LES ECRITS EN PRIORITE (si presents):
-Si l'image contient du texte technique, tu DOIS le lire mot pour mot avant tout:
-- "PRODUCT NAME: SM-A055F" => Modele EXACT = SM-A055F (Galaxy A05) - JAMAIS A05s
-- "PRODUCT NAME: SM-A057F" => Modele EXACT = SM-A057F (Galaxy A05s)
-- Transcris ce PRODUCT NAME exactement
+METHODE GOOGLE LENS:
+1. REGARDE les details: couleur du dos, forme et taille du module camera, nombre de lenses, position du flash, logo (ZTE, VILLAON, Infinix, etc), texture, bords
+2. COMPARE avec ta base de TOUS les telephones 2020-2026: Apple, Samsung, Xiaomi, Redmi, POCO, Infinix, TECNO, itel, Realme, Oppo, Vivo, ZTE Blade, Nokia, Huawei, Honor, Motorola, Villaon, M-Horse, etc
+3. REPONDS exactement comme Google Lens Apercu IA:
+   - Si sur a 95%: "Le smartphone presente sur la photo est un [MARQUE MODELE EXACT]"
+   - Si doute entre 2 proches: "Le smartphone presente sur la photo semble etre un [MODELE 1] (ou un modele tres proche comme le [MODELE 2])"
+4. DONNE ensuite:
+   - ECRITS EXACTS visibles mot pour mot
+   - MODELE EXACT commercial complet
+   - PROCESSEUR officiel universel (Chipset + CPU + GPU)
 
-ETAPE 2 - TABLE VERITE CPU (ne JAMAIS inventer, utiliser cette table):
-- SM-A055F / Galaxy A05 = MediaTek Helio G85 (12nm, 2x2.0 GHz Cortex-A75 + 6x1.8 GHz Cortex-A55, Mali-G52 MC2)
-- SM-A057F / Galaxy A05s = Snapdragon 680 4G (6nm, 4x2.4 GHz Kryo 265 Gold + 4x1.9 GHz Kryo 265 Silver, Adreno 610)
-- SM-A165F / Galaxy A16 4G = Helio G99
-- ZTE Blade A76 / A36 = Unisoc SC9863A ou T606
-- Villaon V45 = Unisoc SC9863A
-- Infinix X6516 / Smart 7 HD = Unisoc SC9863A
+Tu n'es PAS limite a Villaon ou ZTE. Tu dois identifier N'IMPORTE QUEL telephone.
 
-ETAPE 3 - REPONSE GOOGLE LENS:
-- Donne: ECRITS EXACTS mot pour mot + MODELE EXACT depuis PRODUCT NAME + VRAI CPU depuis table ci-dessus
-- Si doute visuel sans texte: "semble etre un X (ou tres proche Y)" comme Google Lens
-- INTERDIT de dire Exynos 850 pour A05/A05s
-
-Question: {user_text or "Lis PRODUCT NAME exact d'abord (SM-A055F), puis donne modele exact Galaxy A05 et vrai CPU Helio G85 depuis table verite. Ne devine jamais A05s ou Exynos 850."}"""
+Question: {user_text or "Fais comme Google Lens: 1. Donne les ecrits exacts visibles mot pour mot, 2. Analyse visuelle detaillee puis donne modele exact ou 'semble etre X ou tres proche Y' si doute, 3. Donne processeur officiel complet. Francais tres detaille."}"""
                 
                 comp = openrouter_client.chat.completions.create(model="google/gemini-2.0-flash-001",messages=[{"role":"user","content":[{"type":"text","text": vision_prompt},{"type":"image_url","image_url":{"url": image_b64}}]}],max_tokens=1200)
                 rep = clean_text(comp.choices[0].message.content)
@@ -1053,21 +1047,20 @@ async def handle_photo(update,context):
             await update.message.reply_text(f"Erreur edition, reessaie dans 20s {SIGNATURE}")
         return
     
-    # === V31.1 ANTI-MENSONGE OCR ===
-    cap_vision = f"""Tu es GOOGLE LENS UNIVERSEL - REGLE ANTI-MENSONGE.
+    # === V30.0 GOOGLE LENS UNIVERSEL - TOUS LES TELEPHONES ===
+    cap_vision = f"""Tu es GOOGLE LENS UNIVERSEL - Tu identifies TOUS les smartphones.
 
-ETAPE 1 - LIS LES ECRITS EN PRIORITE:
-Si tu vois "PRODUCT NAME: SM-A055F" => Modele = SM-A055F = Galaxy A05 (JAMAIS A05s)
-Si tu vois "PRODUCT NAME: SM-A057F" => Modele = SM-A057F = Galaxy A05s
+METHODE GOOGLE LENS:
+1. REGARDE: couleur dos, forme module camera, nombre lenses, logo, bords
+2. COMPARE avec TOUS les telephones 2020-2026: Apple, Samsung, Xiaomi, Redmi, POCO, Infinix, TECNO, itel, Realme, Oppo, Vivo, ZTE Blade, Nokia, Huawei, Honor, Motorola, Villaon, etc
+3. REPONDS comme Google Lens:
+   - Si sur: "Le smartphone presente est un [MARQUE MODELE EXACT]"
+   - Si doute: "Le smartphone presente semble etre un [MODELE 1] (ou un modele tres proche comme le [MODELE 2])"
+4. DONNE: ecrits exacts + modele exact + processeur officiel complet
 
-ETAPE 2 - TABLE VERITE CPU:
-- SM-A055F / A05 = Helio G85 (12nm, 2x2.0 A75 + 6x1.8 A55, Mali-G52 MC2)
-- SM-A057F / A05s = Snapdragon 680 (6nm, 4x2.4 + 4x1.9, Adreno 610)
-- INTERDIT Exynos 850 pour A05/A05s
+Tu n'es PAS limite a Villaon ou ZTE.
 
-ETAPE 3 - REPONSE: Ecrits exacts + Modele exact depuis PRODUCT NAME + Vrai CPU depuis table
-
-Question: {cap or "Lis PRODUCT NAME exact SM-A055F, donne Galaxy A05 et Helio G85 vrai. Ne dis jamais A05s ou Exynos 850."}"""
+Question: {cap or "Fais comme Google Lens: analyse visuelle detaillee puis donne modele exact ou 'semble etre X ou tres proche Y' si doute, plus processeur officiel. Francais tres detaille."}"""
 
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     try:
@@ -1137,7 +1130,7 @@ async def chat_gpt(update,context):
     conversations[uid].append({"role":"assistant","content":rep})
     await update.message.reply_text(to_3d(f"{rep}\n\n{SIGNATURE}"))
 def main():
-    print("Building V31.1 ANTI-MENSONGE OCR...")
+    print("Building V30.0 GOOGLE LENS UNIVERSEL...")
     app = ApplicationBuilder().token(os.getenv("TOKEN")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_cmd))
@@ -1163,7 +1156,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_dark_tunnel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt))
-    print("V31.1 GO ANTI-MENSONGE OCR...")
+    print("V30.0 GO GOOGLE LENS UNIVERSEL...")
     app.run_polling()
 
 if __name__ == "__main__":
